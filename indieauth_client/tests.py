@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from django.test import SimpleTestCase
 
 from gardn.utils import sanitize_user_bio_html
-from .auth import discover_endpoints, fetch_hcard, generate_pkce_pair
+from .auth import discover_endpoints, fetch_hcard, generate_pkce_pair, verify_code_at_auth_endpoint
 
 
 class DiscoveryTests(SimpleTestCase):
@@ -84,6 +84,54 @@ class DiscoveryTests(SimpleTestCase):
         data = discover_endpoints("https://site.example/")
         self.assertEqual(data["authorization_endpoint"], "https://auth.example/authorize")
         self.assertEqual(data["token_endpoint"], "https://auth.example/token")
+
+
+    @patch("indieauth_client.auth.requests.get")
+    def test_auth_endpoint_only_no_token_endpoint(self, get_mock: Mock) -> None:
+        """Sites with only authorization_endpoint (no token_endpoint) should succeed."""
+        response = Mock()
+        response.headers = {}
+        response.text = '<link rel="authorization_endpoint" href="https://auth.example/auth">'
+        response.raise_for_status.return_value = None
+        get_mock.return_value = response
+
+        data = discover_endpoints("https://site.example/")
+        self.assertEqual(data["authorization_endpoint"], "https://auth.example/auth")
+        self.assertNotIn("token_endpoint", data)
+
+
+class VerifyCodeTests(SimpleTestCase):
+    @patch("indieauth_client.auth.requests.post")
+    def test_verify_code_returns_me(self, post_mock: Mock) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"me": "https://site.example/"}
+        post_mock.return_value = response
+
+        payload = verify_code_at_auth_endpoint(
+            authorization_endpoint="https://auth.example/auth",
+            code="abc123",
+            client_id="https://gardn.dev/",
+            redirect_uri="https://gardn.dev/auth/callback/",
+            code_verifier="verifier",
+        )
+        self.assertEqual(payload["me"], "https://site.example/")
+
+    @patch("indieauth_client.auth.requests.post")
+    def test_verify_code_raises_on_missing_me(self, post_mock: Mock) -> None:
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"error": "invalid_grant"}
+        post_mock.return_value = response
+
+        with self.assertRaises(ValueError, msg="Authorization response missing 'me'"):
+            verify_code_at_auth_endpoint(
+                authorization_endpoint="https://auth.example/auth",
+                code="bad",
+                client_id="https://gardn.dev/",
+                redirect_uri="https://gardn.dev/auth/callback/",
+                code_verifier="verifier",
+            )
 
 
 class PkceTests(SimpleTestCase):

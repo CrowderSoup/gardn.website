@@ -19,6 +19,7 @@ from .auth import (
     fetch_hcard,
     generate_pkce_pair,
     random_state,
+    verify_code_at_auth_endpoint,
 )
 
 
@@ -37,6 +38,9 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
         state = random_state()
         redirect_uri = urljoin(settings.PUBLIC_BASE_URL, "/auth/callback/")
         client_id = settings.PUBLIC_BASE_URL + "/"
+        # Only request scope when there is a token endpoint; otherwise this is
+        # an identity-only flow and the authorization endpoint redeems the code.
+        has_token_endpoint = "token_endpoint" in endpoints
         auth_url = build_authorization_url(
             authorization_endpoint=endpoints["authorization_endpoint"],
             me=me,
@@ -44,7 +48,7 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
             redirect_uri=redirect_uri,
             state=state,
             code_challenge=challenge,
-            scope="create",
+            scope="create" if has_token_endpoint else "",
         )
     except Exception as exc:
         messages.error(request, f"Could not start IndieAuth: {exc}")
@@ -54,7 +58,8 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
         "me": me,
         "state": state,
         "code_verifier": verifier,
-        "token_endpoint": endpoints["token_endpoint"],
+        "authorization_endpoint": endpoints["authorization_endpoint"],
+        "token_endpoint": endpoints.get("token_endpoint", ""),
         "micropub_endpoint": endpoints.get("micropub", ""),
         "next": next_url,
     }
@@ -78,13 +83,22 @@ def auth_callback_view(request: HttpRequest) -> HttpResponse:
     client_id = settings.PUBLIC_BASE_URL + "/"
 
     try:
-        token_payload = exchange_code_for_token(
-            token_endpoint=pending["token_endpoint"],
-            code=code,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            code_verifier=pending["code_verifier"],
-        )
+        if pending.get("token_endpoint"):
+            token_payload = exchange_code_for_token(
+                token_endpoint=pending["token_endpoint"],
+                code=code,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_verifier=pending["code_verifier"],
+            )
+        else:
+            token_payload = verify_code_at_auth_endpoint(
+                authorization_endpoint=pending["authorization_endpoint"],
+                code=code,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                code_verifier=pending["code_verifier"],
+            )
     except Exception as exc:
         messages.error(request, f"Token exchange failed: {exc}")
         return redirect("login")
@@ -107,7 +121,7 @@ def auth_callback_view(request: HttpRequest) -> HttpResponse:
 
     request.session["identity_id"] = identity.id
     request.session["me"] = identity.me_url
-    request.session["access_token"] = token_payload["access_token"]
+    request.session["access_token"] = token_payload.get("access_token", "")
     request.session["micropub_endpoint"] = pending.get("micropub_endpoint", "")
 
     next_url = pending.get("next") or "/dashboard/"

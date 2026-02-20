@@ -89,7 +89,7 @@ def discover_endpoints(me_url: str, timeout: int = 8) -> dict[str, str]:
         if key in endpoints and key not in resolved:
             resolved[key] = urljoin(me_url, endpoints[key])
 
-    if "authorization_endpoint" not in resolved or "token_endpoint" not in resolved:
+    if "authorization_endpoint" not in resolved:
         raise ValueError("Could not discover required IndieAuth endpoints")
     return resolved
 
@@ -146,6 +146,33 @@ def exchange_code_for_token(
     payload = response.json()
     if not payload.get("access_token"):
         raise ValueError("Token response missing access_token")
+    return payload
+
+
+def verify_code_at_auth_endpoint(
+    authorization_endpoint: str,
+    code: str,
+    client_id: str,
+    redirect_uri: str,
+    code_verifier: str,
+) -> dict:
+    """Redeem a code at the authorization endpoint for identity-only (no token) flows."""
+    response = requests.post(
+        authorization_endpoint,
+        timeout=8,
+        headers={"Accept": "application/json"},
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "code_verifier": code_verifier,
+        },
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("me"):
+        raise ValueError("Authorization response missing 'me'")
     return payload
 
 

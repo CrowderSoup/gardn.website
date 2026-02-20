@@ -12,10 +12,14 @@
     <div class="bio">{{ identity.bio|safe }}</div>
   {% endif %}
   <img class="main-plant" src="/u/{{ identity.username }}/plant.svg" alt="Your plant" width="180" height="140">
-  <h3>Embed (iframe)</h3>
+  <h3>Plant widget (iframe)</h3>
   <pre>&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}/embed/{{ identity.username }}/plant/" style="border:0;width:100%;height:100vh;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"&gt;&lt;/iframe&gt;</pre>
-  <h3>Embed (JS)</h3>
+  <h3>Plant widget (JS)</h3>
   <pre>&lt;div data-gardn="{{ identity.username }}"&gt;&lt;/div&gt;&lt;script async src="{{ request.scheme }}://{{ request.get_host }}/gardn.js"&gt;&lt;/script&gt;</pre>
+  <h3>Blog roll (iframe)</h3>
+  <pre>&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}/embed/{{ identity.username }}/roll/" style="border:0;width:100%;height:400px;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"&gt;&lt;/iframe&gt;</pre>
+  <h3>Blog roll (JS)</h3>
+  <pre>&lt;div data-gardn-roll="{{ identity.username }}"&gt;&lt;/div&gt;&lt;script async src="{{ request.scheme }}://{{ request.get_host }}/gardn.js"&gt;&lt;/script&gt;</pre>
 </section>
 
 <section>

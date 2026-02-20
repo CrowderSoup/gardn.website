@@ -6,18 +6,18 @@
     <link rel="stylesheet" href="/static/css/site.css">
   </head>
   <body class="embed">
-    <section class="card compact">
-      <h3>{{ identity.display_name|default:identity.username }}'s roll</h3>
-      <ul class="roll-list">
-        {% for row in picks %}
-          <li>
-            <img src="/u/{{ row.picked.username }}/plant.svg" alt="Plant for {{ row.picked.username }}" width="64" height="48">
-            <a href="{{ row.picked.me_url }}" target="_top">{{ row.picked.display_name|default:row.picked.username }}</a>
-          </li>
-        {% empty %}
-          <li>No picks yet.</li>
-        {% endfor %}
-      </ul>
-    </section>
+    <div class="grid garden-grid">
+      {% for row in picks %}
+        <a class="card garden-card" href="{{ row.picked.me_url }}" target="_top" rel="noopener noreferrer">
+          <div class="plant-frame">
+            <img src="/u/{{ row.picked.username }}/plant.svg" alt="Plant for {{ row.picked.username }}" width="120" height="96" loading="lazy">
+          </div>
+          <strong class="garden-name">{{ row.picked.display_name|default:row.picked.username }}</strong>
+          <small class="garden-meta">{{ row.picked.me_url|cut:"https://"|cut:"http://" }}</small>
+        </a>
+      {% empty %}
+        <p>No picks yet.</p>
+      {% endfor %}
+    </div>
   </body>
 </html>

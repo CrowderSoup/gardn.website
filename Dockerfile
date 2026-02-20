@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
 COPY . /app
 
 ENTRYPOINT ["./docker/entrypoint.sh"]
-CMD ["uv", "run", "gunicorn", "gardn.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["sh", "-c", "uv run gunicorn gardn.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]

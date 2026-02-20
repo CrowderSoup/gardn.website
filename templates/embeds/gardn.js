@@ -47,7 +47,9 @@
       '<img class="plant-img" src="' + data.plant_svg_url + '" alt="Plant for ' + domain + '" loading="lazy" width="180" height="140" />' +
       "</a></p>" +
       '<div class="pick-box"><p class="pick-count">Picks: ' + data.pick_count + '</p>' +
-      '<a class="btn" href="' + data.login_to_pick_url + '" target="_top" rel="noopener noreferrer">Login to pick</a>' +
+      (data.has_picked
+        ? '<span class="btn">You picked this</span>'
+        : '<a class="btn" href="' + data.login_to_pick_url + '" target="_top" rel="noopener noreferrer">Login to pick</a>') +
       "</div>" +
       "</article>";
     el.innerHTML = "";

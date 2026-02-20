@@ -1,11 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
+{% if identity %}
+<section class="hero card">
+  <p class="eyebrow">Welcome back</p>
+  <h1>{{ identity.display_name|default:identity.username }}</h1>
+  <p><img class="main-plant" src="/u/{{ identity.username }}/plant.svg" alt="Your plant" width="120" height="96"></p>
+  <p><a class="btn" href="/dashboard/">Go to your garden</a></p>
+</section>
+{% else %}
 <section class="hero card">
   <p class="eyebrow">IndieWeb garden graph</p>
   <h1>Grow your IndieWeb garden</h1>
   <p>Login with your website, get a deterministic plant, and let friends pick it.</p>
   <p><a class="btn" href="/login/?next=/dashboard/">Start now</a></p>
 </section>
+{% endif %}
 
 <h2>Newest gardens</h2>
 <div class="grid garden-grid">

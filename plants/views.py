@@ -43,6 +43,7 @@ def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
     if viewer:
         has_picked = Pick.objects.filter(picker=viewer, picked=identity).exists()
 
+    picks = Pick.objects.filter(picker=identity).select_related("picked").order_by("-created_at")
     return render(
         request,
         "plants/user_profile.html",
@@ -51,6 +52,7 @@ def user_profile_view(request: HttpRequest, username: str) -> HttpResponse:
             "viewer": viewer,
             "has_picked": has_picked,
             "pick_count": Pick.objects.filter(picked=identity).count(),
+            "picks": picks,
         },
     )
 

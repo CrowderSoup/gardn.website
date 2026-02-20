@@ -13,4 +13,21 @@
 <div id="pick-state">
   {% include "picks/_pick_button.html" with picked_identity=identity viewer=viewer has_picked=has_picked pick_count=pick_count %}
 </div>
+
+<section>
+  <h2>{{ identity.display_name|default:identity.username }}'s picks</h2>
+  <div class="grid garden-grid">
+    {% for pick in picks %}
+      <a class="card garden-card" href="/u/{{ pick.picked.username }}/">
+        <div class="plant-frame">
+          <img src="/u/{{ pick.picked.username }}/plant.svg" alt="Plant for {{ pick.picked.username }}" width="120" height="96">
+        </div>
+        <strong class="garden-name">{{ pick.picked.display_name|default:pick.picked.username }}</strong>
+        <small class="garden-meta">{{ pick.picked.me_url|cut:"https://"|cut:"http://" }}</small>
+      </a>
+    {% empty %}
+      <p>No picks yet.</p>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

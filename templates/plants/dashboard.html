@@ -5,6 +5,25 @@
   <p class="eyebrow">Dashboard</p>
   <h1>Your garden</h1>
 </section>
+
+<section class="card">
+  <h2>Harvest bookmarklet</h2>
+  <p>Harvesting URLs is like fertilizing your plant. Each URL you harvest helps your plant grow and change!</p>
+  <p>Drag this to your browser bookmarks bar to quickly harvest URLs:</p>
+  <p>
+    <a class="bookmarklet-link"
+       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('{{ request.scheme }}://{{ request.get_host }}/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
+      🌱 Harvest to Gardn
+    </a>
+  </p>
+  <p class="subtle"><a href="/harvest/bookmarklet/">Bookmarklet instructions</a></p>
+  {% if micropub_endpoint %}
+    <p class="subtle">Micropub enabled — harvests can be posted to your website.</p>
+  {% elif identity.login_method == "mastodon" %}
+    <p class="subtle">Mastodon connected — harvests can be posted to your Mastodon profile.</p>
+  {% endif %}
+</section>
+
 <section class="card profile-card">
   <h2>{{ identity.display_name|default:identity.username }}</h2>
   <p class="subtle"><a href="{{ identity.me_url }}">{{ identity.me_url }}</a></p>
@@ -37,23 +56,6 @@
       Show my harvests on my public profile
     </label>
   </form>
-</section>
-
-<section class="card">
-  <h2>Harvest bookmarklet</h2>
-  {% if identity.login_method == "mastodon" %}
-    <p class="subtle">Mastodon connected — harvests can be posted to your Mastodon profile.</p>
-  {% elif micropub_endpoint %}
-    <p class="subtle">Micropub enabled — harvests can be posted to your website.</p>
-  {% endif %}
-  <p>Drag this to your browser bookmarks bar to quickly harvest URLs:</p>
-  <p>
-    <a class="bookmarklet-link"
-       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('{{ request.scheme }}://{{ request.get_host }}/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
-      🌱 Harvest to Gardn
-    </a>
-  </p>
-  <p class="subtle"><a href="/harvest/bookmarklet/">Bookmarklet instructions</a></p>
 </section>
 
 <section class="card">

@@ -120,6 +120,6 @@ def plant_svg_view(request: HttpRequest, username: str) -> HttpResponse:
         return response
 
     response = HttpResponse(svg, content_type="image/svg+xml")
-    response["Cache-Control"] = "no-cache"
+    response["Cache-Control"] = "public, max-age=3600"
     response["ETag"] = etag
     return response

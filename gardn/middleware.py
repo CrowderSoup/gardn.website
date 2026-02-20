@@ -10,6 +10,7 @@ class LoginRequiredSessionMiddleware:
     PUBLIC_PREFIXES = (
         "/login/",
         "/auth/",
+        "/mastodon/",
         "/embed/",
         "/u/",
         "/api/",
@@ -30,6 +31,10 @@ class LoginRequiredSessionMiddleware:
             return self.get_response(request)
 
         if request.session.get("identity_id"):
+            # Mastodon users who haven't verified their website must go to verify page
+            if (not request.session.get("website_verified", True)
+                    and request.path != "/mastodon/verify-website/"):
+                return redirect("/mastodon/verify-website/")
             return self.get_response(request)
 
         query = urlencode({"next": request.get_full_path()})

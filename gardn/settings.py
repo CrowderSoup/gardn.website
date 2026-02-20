@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "picks",
     "indieauth_client",
     "harvests",
+    "mastodon_auth",
 ]
 
 MIDDLEWARE = [

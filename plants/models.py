@@ -11,6 +11,15 @@ class UserIdentity(models.Model):
     bio = models.TextField(blank=True)
     svg_cache = models.TextField(blank=True)
     show_harvests_on_profile = models.BooleanField(default=False)
+    login_method = models.CharField(
+        max_length=20,
+        choices=[("indieauth", "IndieAuth"), ("mastodon", "Mastodon")],
+        default="indieauth",
+    )
+    mastodon_handle = models.CharField(max_length=255, blank=True)
+    mastodon_profile_url = models.URLField(blank=True)
+    mastodon_access_token = models.TextField(blank=True)
+    website_verified = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

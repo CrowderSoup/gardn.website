@@ -14,4 +14,5 @@ urlpatterns = [
     path("", include("picks.urls")),
     path("", include("embeds.urls")),
     path("", include("harvests.urls")),
+    path("mastodon/", include("mastodon_auth.urls")),
 ]

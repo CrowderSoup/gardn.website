@@ -26,6 +26,11 @@
         <input type="checkbox" name="post_to_micropub" value="true">
         Post bookmark to my website via Micropub
       </label>
+    {% elif can_post_to_mastodon %}
+      <label class="checkbox-label">
+        <input type="checkbox" name="post_to_mastodon" value="true">
+        Post bookmark to Mastodon
+      </label>
     {% endif %}
 
     <button type="submit">Harvest</button>

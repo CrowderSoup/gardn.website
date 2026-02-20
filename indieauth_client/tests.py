@@ -40,6 +40,51 @@ class DiscoveryTests(SimpleTestCase):
         self.assertEqual(data["authorization_endpoint"], "https://auth.example/authorize")
         self.assertEqual(data["token_endpoint"], "https://auth.example/token")
 
+    @patch("indieauth_client.auth.requests.get")
+    def test_indieauth_metadata_discovery(self, get_mock: Mock) -> None:
+        profile_response = Mock()
+        profile_response.headers = {"Link": '<https://auth.example/.well-known/oauth-authorization-server>; rel="indieauth-metadata"'}
+        profile_response.text = "<html></html>"
+        profile_response.raise_for_status.return_value = None
+
+        metadata_response = Mock()
+        metadata_response.raise_for_status.return_value = None
+        metadata_response.json.return_value = {
+            "issuer": "https://auth.example/",
+            "authorization_endpoint": "https://auth.example/authorize",
+            "token_endpoint": "https://auth.example/token",
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+        get_mock.side_effect = [profile_response, metadata_response]
+
+        data = discover_endpoints("https://site.example/")
+        self.assertEqual(data["authorization_endpoint"], "https://auth.example/authorize")
+        self.assertEqual(data["token_endpoint"], "https://auth.example/token")
+        self.assertEqual(get_mock.call_count, 2)
+
+    @patch("indieauth_client.auth.requests.get")
+    def test_indieauth_metadata_via_html_link(self, get_mock: Mock) -> None:
+        profile_response = Mock()
+        profile_response.headers = {}
+        profile_response.text = '<link rel="indieauth-metadata" href="https://auth.example/.well-known/oauth-authorization-server">'
+        profile_response.raise_for_status.return_value = None
+
+        metadata_response = Mock()
+        metadata_response.raise_for_status.return_value = None
+        metadata_response.json.return_value = {
+            "issuer": "https://auth.example/",
+            "authorization_endpoint": "https://auth.example/authorize",
+            "token_endpoint": "https://auth.example/token",
+            "code_challenge_methods_supported": ["S256"],
+        }
+
+        get_mock.side_effect = [profile_response, metadata_response]
+
+        data = discover_endpoints("https://site.example/")
+        self.assertEqual(data["authorization_endpoint"], "https://auth.example/authorize")
+        self.assertEqual(data["token_endpoint"], "https://auth.example/token")
+
 
 class PkceTests(SimpleTestCase):
     def test_pkce_pair_s256(self) -> None:

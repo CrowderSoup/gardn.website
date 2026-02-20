@@ -63,6 +63,7 @@ def discover_endpoints(me_url: str, timeout: int = 8) -> dict[str, str]:
     response = requests.get(me_url, timeout=timeout, headers={"Accept": "text/html,application/xhtml+xml"})
     response.raise_for_status()
 
+    # HTTP Link header takes precedence over HTML <link> elements
     endpoints = _parse_link_header(response.headers.get("Link", ""))
 
     parser = _LinkTagParser()
@@ -71,8 +72,21 @@ def discover_endpoints(me_url: str, timeout: int = 8) -> dict[str, str]:
         endpoints.setdefault(rel, href)
 
     resolved: dict[str, str] = {}
+
+    # IndieAuth spec: check for indieauth-metadata first (modern discovery)
+    metadata_rel = endpoints.get("indieauth-metadata")
+    if metadata_rel:
+        metadata_url = urljoin(me_url, metadata_rel)
+        meta_response = requests.get(metadata_url, timeout=timeout, headers={"Accept": "application/json"})
+        meta_response.raise_for_status()
+        meta = meta_response.json()
+        for key in ["authorization_endpoint", "token_endpoint", "userinfo_endpoint"]:
+            if key in meta:
+                resolved[key] = meta[key]
+
+    # Fall back to legacy direct link discovery for backward compatibility
     for key in ["authorization_endpoint", "token_endpoint", "micropub", "microsub"]:
-        if key in endpoints:
+        if key in endpoints and key not in resolved:
             resolved[key] = urljoin(me_url, endpoints[key])
 
     if "authorization_endpoint" not in resolved or "token_endpoint" not in resolved:

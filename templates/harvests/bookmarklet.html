@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Bookmarklet | Gardn{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <p class="eyebrow">Quick capture</p>
+  <h1>Harvest Bookmarklet</h1>
+  <p>Drag this link to your browser bookmarks bar to quickly harvest URLs to your gardn:</p>
+  <p>
+    <a class="bookmarklet-link"
+       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('https://gardn.dev/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
+      🌱 Harvest to Gardn
+    </a>
+  </p>
+  <p class="subtle">Drag the link above to your bookmarks bar. When you find a page you want to save, click it — a small window will open so you can harvest the URL to your gardn without leaving the page.</p>
+
+  <h2>Bookmarklet code</h2>
+  <pre>javascript:(function(){
+  var u=encodeURIComponent(window.location.href);
+  var t=encodeURIComponent(document.title);
+  window.open('https://gardn.dev/harvest/?url='+u+'&title='+t+'&popup=1',
+    'gardn-harvest','width=500,height=580,resizable=yes');
+})();</pre>
+
+  {% if identity %}
+    <p><a href="/dashboard/">Back to dashboard</a></p>
+  {% else %}
+    <p><a href="/login/">Log in</a> to start harvesting.</p>
+  {% endif %}
+</section>
+{% endblock %}

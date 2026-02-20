@@ -129,6 +129,43 @@ def roll_json_view(request: HttpRequest, username: str) -> JsonResponse:
 
 
 @require_GET
+@xframe_options_exempt
+def embed_harvests_view(request: HttpRequest, username: str) -> HttpResponse:
+    from harvests.models import Harvest
+
+    identity = get_object_or_404(UserIdentity, username=username)
+    if not _embed_allowed(request, identity):
+        return HttpResponse("Forbidden: embed domain not allowed", status=403)
+    harvests = Harvest.objects.filter(identity=identity)
+    return render(request, "embeds/embed_harvests.html", {"identity": identity, "harvests": harvests})
+
+
+@require_GET
+def harvests_json_view(request: HttpRequest, username: str) -> JsonResponse:
+    from harvests.models import Harvest
+
+    identity = get_object_or_404(UserIdentity, username=username)
+    origin = request.headers.get("Origin", "")
+    if not _embed_allowed(request, identity):
+        return JsonResponse({"detail": "Forbidden: embed domain not allowed"}, status=403)
+    rows = [
+        {
+            "url": h.url,
+            "title": h.title,
+            "note": h.note,
+            "tags": h.tags_list(),
+            "harvested_at": h.harvested_at.isoformat(),
+        }
+        for h in Harvest.objects.filter(identity=identity)
+    ]
+    response = JsonResponse({"username": identity.username, "count": len(rows), "harvests": rows})
+    if origin and _host_allowed(_host_from_url(origin), _host_from_url(identity.me_url)):
+        response["Access-Control-Allow-Origin"] = origin
+        response["Vary"] = "Origin"
+    return response
+
+
+@require_GET
 def gardn_js_view(request: HttpRequest) -> HttpResponse:
     js = render(request, "embeds/gardn.js", {"public_base": settings.PUBLIC_BASE_URL}).content
     return HttpResponse(js, content_type="application/javascript")

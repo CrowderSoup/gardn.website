@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="stylesheet" href="/static/css/site.css">
+  </head>
+  <body class="embed">
+    <div class="grid harvest-grid">
+      {% for harvest in harvests %}
+        <div class="card harvest-card">
+          <div class="harvest-card-domain subtle">{{ harvest.url|cut:"https://"|cut:"http://"|truncatechars:40 }}</div>
+          <a class="harvest-card-title" href="{{ harvest.url }}" rel="noopener noreferrer" target="_top">
+            {{ harvest.title|default:harvest.url|truncatechars:80 }}
+          </a>
+          {% if harvest.note %}
+            <p class="harvest-card-note subtle">{{ harvest.note|truncatechars:120 }}</p>
+          {% endif %}
+          {% with harvest.tags_list as tag_list %}
+            {% if tag_list %}
+              <div class="harvest-tags">
+                {% for tag in tag_list %}<span class="harvest-tag">{{ tag }}</span>{% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
+          <div class="harvest-card-footer">
+            <span class="subtle harvest-card-date">{{ harvest.harvested_at|date:"M j, Y" }}</span>
+          </div>
+        </div>
+      {% empty %}
+        <p>No harvests yet.</p>
+      {% endfor %}
+    </div>
+  </body>
+</html>

@@ -16,6 +16,7 @@ class LoginRequiredSessionMiddleware:
         "/gardn.js",
         "/static/",
         "/admin/",
+        "/harvest/bookmarklet/",
     )
 
     def __init__(self, get_response):

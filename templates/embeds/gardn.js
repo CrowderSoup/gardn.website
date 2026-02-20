@@ -32,7 +32,17 @@
       ".gardn-roll-card:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(35,69,43,.16)}" +
       ".gardn-roll-plant{display:block;width:100%;height:auto;border-radius:8px;border:1px solid #dae3cd;background:linear-gradient(180deg,#f8fbf2,#eff6e5);margin-bottom:.4rem}" +
       ".gardn-roll-name{display:block;font-size:.9rem;font-weight:600;margin-bottom:.15rem}" +
-      ".gardn-roll-domain{display:block;font-size:.75rem;color:#476056;overflow-wrap:anywhere}";
+      ".gardn-roll-domain{display:block;font-size:.75rem;color:#476056;overflow-wrap:anywhere}" +
+      /* harvests widget */
+      ".gardn-harvests{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.75rem;font-family:'Avenir Next','Trebuchet MS','Gill Sans',sans-serif}" +
+      ".gardn-harvest-card{display:flex;flex-direction:column;background:#fff;border:1px solid #c8d3b6;border-radius:16px;padding:.75rem;box-shadow:0 10px 30px rgba(35,69,43,.12)}" +
+      ".gardn-harvest-domain{font-size:.7rem;color:#476056;margin-bottom:.2rem;overflow-wrap:anywhere}" +
+      ".gardn-harvest-title{font-size:.9rem;font-weight:600;color:#1e2f2a;text-decoration:none;margin-bottom:.3rem;display:block;overflow-wrap:anywhere}" +
+      ".gardn-harvest-title:hover{text-decoration:underline}" +
+      ".gardn-harvest-note{font-size:.8rem;color:#476056;margin:.2rem 0}" +
+      ".gardn-harvest-tags{display:flex;flex-wrap:wrap;gap:.25rem;margin:.3rem 0}" +
+      ".gardn-harvest-tag{font-size:.7rem;background:#eaf2e3;color:#2f6040;border-radius:6px;padding:.1rem .4rem}" +
+      ".gardn-harvest-date{font-size:.7rem;color:#8a9e8a;margin-top:auto;padding-top:.3rem}";
     document.head.appendChild(style);
   }
 
@@ -103,6 +113,46 @@
     el.innerHTML = html;
   }
 
+  /* ── harvests widget ── */
+
+  function renderHarvestsFallback(el, username) {
+    var profileUrl = "{{ public_base }}/u/" + encodeURIComponent(username) + "/";
+    var a = document.createElement("a");
+    a.href = profileUrl;
+    a.target = "_top";
+    a.rel = "noopener noreferrer";
+    a.textContent = "View this garden on Gardn";
+    el.innerHTML = "";
+    el.appendChild(a);
+  }
+
+  function renderHarvests(el, data) {
+    if (!data.harvests || !data.harvests.length) {
+      el.textContent = "No harvests yet.";
+      return;
+    }
+    var html = '<div class="gardn-harvests">';
+    data.harvests.forEach(function (h) {
+      var domain = escapeHtml(stripScheme(h.url));
+      var title = escapeHtml(h.title || h.url);
+      var note = h.note ? '<p class="gardn-harvest-note">' + escapeHtml(h.note) + "</p>" : "";
+      var tags = (h.tags || []).map(function (t) {
+        return '<span class="gardn-harvest-tag">' + escapeHtml(t) + "</span>";
+      }).join("");
+      var tagsHtml = tags ? '<div class="gardn-harvest-tags">' + tags + "</div>" : "";
+      var date = h.harvested_at ? new Date(h.harvested_at).toLocaleDateString() : "";
+      html +=
+        '<div class="gardn-harvest-card">' +
+        '<span class="gardn-harvest-domain">' + domain + "</span>" +
+        '<a class="gardn-harvest-title" href="' + escapeHtml(h.url) + '" target="_top" rel="noopener noreferrer">' + title + "</a>" +
+        note + tagsHtml +
+        '<span class="gardn-harvest-date">' + escapeHtml(date) + "</span>" +
+        "</div>";
+    });
+    html += "</div>";
+    el.innerHTML = html;
+  }
+
   /* ── init ── */
 
   ensureWidgetStyles();
@@ -127,5 +177,16 @@
       })
       .then(function (data) { renderRoll(node, data); })
       .catch(function () { renderRollFallback(node, username); });
+  });
+
+  document.querySelectorAll("[data-gardn-harvests]").forEach(function (node) {
+    var username = node.getAttribute("data-gardn-harvests");
+    fetch("{{ public_base }}/api/" + encodeURIComponent(username) + "/harvests.json")
+      .then(function (r) {
+        if (!r.ok) throw new Error("fetch failed");
+        return r.json();
+      })
+      .then(function (data) { renderHarvests(node, data); })
+      .catch(function () { renderHarvestsFallback(node, username); });
   });
 })();

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "embeds",
     "picks",
     "indieauth_client",
+    "harvests",
 ]
 
 MIDDLEWARE = [

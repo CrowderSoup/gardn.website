@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Login | Gardn{% endblock %}
 {% block content %}
-<h1>Log in with your website</h1>
-<form method="post" class="card auth-card">
-  {% csrf_token %}
-  <label for="id_me">Your website URL</label>
-  <input id="id_me" name="me" type="url" required placeholder="https://example.com/" value="{{ me|default:'' }}">
-  <input type="hidden" name="next" value="{{ next_url }}">
-  <button type="submit">Continue with IndieAuth</button>
-</form>
+<section class="card auth-card">
+  <p class="eyebrow">Sign in</p>
+  <h1>Log in with your website</h1>
+  <p class="subtle">Use your homepage URL and continue through IndieAuth.</p>
+  <form method="post">
+    {% csrf_token %}
+    <label for="id_me">Your website URL</label>
+    <input id="id_me" name="me" type="url" required placeholder="https://example.com/" value="{{ me|default:'' }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <button type="submit">Continue with IndieAuth</button>
+  </form>
+</section>
 {% endblock %}

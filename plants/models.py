@@ -11,6 +11,7 @@ class UserIdentity(models.Model):
     bio = models.TextField(blank=True)
     svg_cache = models.TextField(blank=True)
     show_harvests_on_profile = models.BooleanField(default=False)
+    animate_plant_motion = models.BooleanField(default=False)
     login_method = models.CharField(
         max_length=20,
         choices=[("indieauth", "IndieAuth"), ("mastodon", "Mastodon")],

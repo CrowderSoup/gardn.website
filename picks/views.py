@@ -50,6 +50,7 @@ def pick_view(request: HttpRequest, username: str) -> HttpResponse:
 
     if viewer.id != picked.id:
         Pick.objects.get_or_create(picker=viewer, picked=picked)
+        UserIdentity.objects.filter(id__in=[viewer.id, picked.id]).update(svg_cache="")
 
     return _render_pick_state(request, viewer, picked)
 
@@ -69,4 +70,5 @@ def unpick_view(request: HttpRequest, username: str) -> HttpResponse:
         return response
 
     Pick.objects.filter(picker=viewer, picked=picked).delete()
+    UserIdentity.objects.filter(id__in=[viewer.id, picked.id]).update(svg_cache="")
     return _render_pick_state(request, viewer, picked)

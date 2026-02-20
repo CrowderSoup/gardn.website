@@ -11,7 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 from picks.models import Pick
 
 from .models import UserIdentity
-from .svg import generate_svg
+from .svg import SVG_RENDER_VERSION, generate_svg
 
 
 def _current_identity(request: HttpRequest) -> UserIdentity | None:
@@ -96,8 +96,19 @@ def profile_settings_view(request: HttpRequest) -> HttpResponse:
     identity = _current_identity(request)
     if not identity:
         return HttpResponse("Unauthorized", status=401)
-    identity.show_harvests_on_profile = "show_harvests_on_profile" in request.POST
-    identity.save(update_fields=["show_harvests_on_profile", "updated_at"])
+    new_show_harvests = "show_harvests_on_profile" in request.POST
+    new_animate_motion = "animate_plant_motion" in request.POST
+    invalidate_svg = (
+        identity.show_harvests_on_profile != new_show_harvests
+        or identity.animate_plant_motion != new_animate_motion
+    )
+    identity.show_harvests_on_profile = new_show_harvests
+    identity.animate_plant_motion = new_animate_motion
+    if invalidate_svg:
+        identity.svg_cache = ""
+        identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "svg_cache", "updated_at"])
+    else:
+        identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "updated_at"])
     return redirect("dashboard")
 
 
@@ -106,9 +117,17 @@ def plant_svg_view(request: HttpRequest, username: str) -> HttpResponse:
     from harvests.models import Harvest
 
     identity = get_object_or_404(UserIdentity, username=username)
-    if not identity.svg_cache:
+    motion_marker = f"motion:{int(identity.animate_plant_motion)}"
+    render_marker = f"render:{SVG_RENDER_VERSION};{motion_marker}"
+    if not identity.svg_cache or render_marker not in identity.svg_cache:
         harvest_urls = list(Harvest.objects.filter(identity=identity).values_list("url", flat=True))
-        svg = generate_svg(identity.me_url, harvest_urls=harvest_urls)
+        pick_count = Pick.objects.filter(Q(picker=identity) | Q(picked=identity)).count()
+        svg = generate_svg(
+            identity.me_url,
+            harvest_urls=harvest_urls,
+            motion_enabled=identity.animate_plant_motion,
+            pick_count=pick_count,
+        )
         identity.svg_cache = svg
         identity.save(update_fields=["svg_cache", "updated_at"])
     svg = identity.svg_cache

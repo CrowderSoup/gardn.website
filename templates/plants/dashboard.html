@@ -55,6 +55,12 @@
              onchange="this.form.submit()">
       Show my harvests on my public profile
     </label>
+    <label>
+      <input type="checkbox" name="animate_plant_motion"
+             {% if identity.animate_plant_motion %}checked{% endif %}
+             onchange="this.form.submit()">
+      Animate my plant motion
+    </label>
   </form>
 </section>
 

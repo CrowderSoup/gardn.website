@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import requests
+from django.conf import settings
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -115,7 +116,7 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
 @require_GET
 def bookmarklet_view(request: HttpRequest) -> HttpResponse:
     identity = _current_identity(request)
-    return render(request, "harvests/bookmarklet.html", {"identity": identity})
+    return render(request, "harvests/bookmarklet.html", {"identity": identity, "public_base_url": settings.PUBLIC_BASE_URL})
 
 
 @require_POST

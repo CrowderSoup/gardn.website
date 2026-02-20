@@ -7,7 +7,7 @@
   <p>Drag this link to your browser bookmarks bar to quickly harvest URLs to your gardn:</p>
   <p>
     <a class="bookmarklet-link"
-       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('https://gardn.dev/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
+       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('{{ public_base_url }}/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
       🌱 Harvest to Gardn
     </a>
   </p>
@@ -17,7 +17,7 @@
   <pre>javascript:(function(){
   var u=encodeURIComponent(window.location.href);
   var t=encodeURIComponent(document.title);
-  window.open('https://gardn.dev/harvest/?url='+u+'&title='+t+'&popup=1',
+  window.open('{{ public_base_url }}/harvest/?url='+u+'&title='+t+'&popup=1',
     'gardn-harvest','width=500,height=580,resizable=yes');
 })();</pre>
 

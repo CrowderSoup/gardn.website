@@ -123,6 +123,20 @@ def build_authorization_url(
     return f"{authorization_endpoint}?{urlencode(params)}"
 
 
+def _raise_for_status_with_body(response: requests.Response) -> None:
+    """Like raise_for_status() but includes the response body in the exception message."""
+    if response.ok:
+        return
+    try:
+        detail = response.json()
+    except Exception:
+        detail = response.text[:500] if response.text else "(empty body)"
+    raise requests.HTTPError(
+        f"{response.status_code} {response.reason} — {detail}",
+        response=response,
+    )
+
+
 def exchange_code_for_token(
     token_endpoint: str,
     code: str,
@@ -142,7 +156,7 @@ def exchange_code_for_token(
             "code_verifier": code_verifier,
         },
     )
-    response.raise_for_status()
+    _raise_for_status_with_body(response)
     payload = response.json()
     if not payload.get("access_token"):
         raise ValueError("Token response missing access_token")
@@ -169,7 +183,7 @@ def verify_code_at_auth_endpoint(
             "code_verifier": code_verifier,
         },
     )
-    response.raise_for_status()
+    _raise_for_status_with_body(response)
     payload = response.json()
     if not payload.get("me"):
         raise ValueError("Authorization response missing 'me'")

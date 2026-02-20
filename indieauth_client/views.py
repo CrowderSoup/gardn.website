@@ -123,6 +123,7 @@ def auth_callback_view(request: HttpRequest) -> HttpResponse:
     request.session["me"] = identity.me_url
     request.session["access_token"] = token_payload.get("access_token", "")
     request.session["micropub_endpoint"] = pending.get("micropub_endpoint", "")
+    request.session["website_verified"] = True
 
     next_url = pending.get("next") or "/dashboard/"
     del request.session["indieauth_pending"]

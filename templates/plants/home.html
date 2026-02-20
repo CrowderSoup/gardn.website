@@ -5,7 +5,7 @@
   <p class="eyebrow">Welcome back</p>
   <h1>{{ identity.display_name|default:identity.username }}</h1>
   <p><img class="main-plant" src="/u/{{ identity.username }}/plant.svg" alt="Your plant" width="120" height="96"></p>
-  <p><a class="btn" href="/dashboard/">Go to your garden</a></p>
+  <p><a class="btn" href="/u/{{ identity.username }}/">Go to your garden</a></p>
 </section>
 {% else %}
 <section class="hero card">

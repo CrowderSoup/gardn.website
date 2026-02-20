@@ -41,7 +41,9 @@
 
 <section class="card">
   <h2>Harvest bookmarklet</h2>
-  {% if micropub_endpoint %}
+  {% if identity.login_method == "mastodon" %}
+    <p class="subtle">Mastodon connected — harvests can be posted to your Mastodon profile.</p>
+  {% elif micropub_endpoint %}
     <p class="subtle">Micropub enabled — harvests can be posted to your website.</p>
   {% endif %}
   <p>Drag this to your browser bookmarks bar to quickly harvest URLs:</p>
@@ -86,7 +88,11 @@
           {% endwith %}
           <div class="harvest-card-footer">
             <span class="subtle harvest-card-date">{{ harvest.harvested_at|date:"M j, Y" }}</span>
-            {% if harvest.micropub_posted %}<span class="subtle harvest-posted">posted</span>{% endif %}
+            {% if harvest.mastodon_posted %}
+              <span class="subtle harvest-posted">posted to mastodon</span>
+            {% elif harvest.micropub_posted %}
+              <span class="subtle harvest-posted">posted</span>
+            {% endif %}
             <form method="post" action="/harvest/{{ harvest.id }}/delete/"
                   hx-post="/harvest/{{ harvest.id }}/delete/"
                   hx-target="#harvest-{{ harvest.id }}"

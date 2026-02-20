@@ -12,6 +12,7 @@ class Harvest(models.Model):
     note = models.TextField(blank=True)
     tags = models.CharField(max_length=500, blank=True)
     micropub_posted = models.BooleanField(default=False)
+    mastodon_posted = models.BooleanField(default=False)
     harvested_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

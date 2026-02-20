@@ -29,6 +29,19 @@ def _is_valid_url(url: str) -> bool:
         return False
 
 
+def _build_mastodon_status(harvest: Harvest) -> str:
+    parts = []
+    if harvest.title:
+        parts.append(f'"{harvest.title}"')
+    parts.append(harvest.url)
+    if harvest.note:
+        parts.append(f"\n{harvest.note}")
+    tags = harvest.tags_list()
+    if tags:
+        parts.append("\n" + " ".join(f"#{t}" for t in tags))
+    return "\n".join(parts)
+
+
 @require_http_methods(["GET", "POST"])
 def harvest_view(request: HttpRequest) -> HttpResponse:
     identity = _current_identity(request)
@@ -38,6 +51,10 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
         return redirect(f"/login/?{query}")
 
     micropub_endpoint = request.session.get("micropub_endpoint", "")
+    can_post_to_mastodon = (
+        identity.login_method == "mastodon"
+        and bool(identity.mastodon_access_token)
+    )
 
     if request.method == "GET":
         return render(request, "harvests/harvest_form.html", {
@@ -45,6 +62,7 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
             "url": request.GET.get("url", ""),
             "title": request.GET.get("title", ""),
             "micropub_endpoint": micropub_endpoint,
+            "can_post_to_mastodon": can_post_to_mastodon,
         })
 
     # POST
@@ -53,6 +71,7 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
     note = request.POST.get("note", "").strip()
     tags = ", ".join(t.strip() for t in request.POST.get("tags", "").split(",") if t.strip())
     post_to_micropub = request.POST.get("post_to_micropub") == "true"
+    post_to_mastodon = request.POST.get("post_to_mastodon") == "true"
 
     if not url or not _is_valid_url(url):
         return render(request, "harvests/harvest_form.html", {
@@ -62,6 +81,7 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
             "note": note,
             "tags": tags,
             "micropub_endpoint": micropub_endpoint,
+            "can_post_to_mastodon": can_post_to_mastodon,
             "error": "Please enter a valid http/https URL.",
         }, status=400)
 
@@ -94,11 +114,34 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
         except Exception as exc:
             micropub_warning = f"Harvest saved, but micropub post failed: {exc}"
 
+    mastodon_warning = None
+    if post_to_mastodon and can_post_to_mastodon:
+        from urllib.parse import urlparse as _urlparse
+        parsed = _urlparse(identity.mastodon_profile_url)
+        instance_url = f"{parsed.scheme}://{parsed.netloc}"
+        status_text = _build_mastodon_status(harvest)
+        try:
+            resp = requests.post(
+                f"{instance_url}/api/v1/statuses",
+                json={"status": status_text, "visibility": "public"},
+                headers={"Authorization": f"Bearer {identity.mastodon_access_token}"},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                harvest.mastodon_posted = True
+                harvest.save(update_fields=["mastodon_posted"])
+            else:
+                mastodon_warning = f"Harvest saved, but Mastodon post failed (HTTP {resp.status_code})."
+        except Exception as exc:
+            mastodon_warning = f"Harvest saved, but Mastodon post failed: {exc}"
+
     # Invalidate SVG cache so plant regenerates with new harvest
     UserIdentity.objects.filter(pk=identity.pk).update(svg_cache="")
 
     if micropub_warning:
         messages.warning(request, micropub_warning)
+    if mastodon_warning:
+        messages.warning(request, mastodon_warning)
 
     is_popup = request.GET.get("popup") == "1"
     if is_popup:

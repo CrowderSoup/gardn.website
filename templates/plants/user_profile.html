@@ -3,7 +3,8 @@
 {% block content %}
 <section class="card profile-card">
   <h1>{{ identity.display_name|default:identity.username }}</h1>
-  <p class="subtle"><a href="{{ identity.me_url }}">{{ identity.me_url }}</a></p>
+  <p class="subtle"><a href="{{ identity.me_url }}" rel="me">{{ identity.me_url }}</a></p>
+  {% if identity.mastodon_profile_url and identity.mastodon_profile_url != identity.me_url %}<p class="subtle"><a href="{{ identity.mastodon_profile_url }}" rel="me">{{ identity.mastodon_profile_url }}</a></p>{% endif %}
   {% if identity.photo_url %}
     <p><img class="profile-photo" src="{{ identity.photo_url }}" alt="Photo for {{ identity.display_name|default:identity.username }}" width="96" height="96" loading="lazy"></p>
   {% endif %}

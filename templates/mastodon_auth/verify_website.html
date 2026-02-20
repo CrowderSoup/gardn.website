@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Verify Your Website | Gardn{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <p class="eyebrow">One more step</p>
+  <h1>Verify your website</h1>
+  <p class="subtle">
+    Gardn uses your website as your identity. To link your Mastodon account to your website,
+    add the following tag to your website's <code>&lt;head&gt;</code>:
+  </p>
+  <pre><code>&lt;link rel="me" href="{{ mastodon_profile_url }}"&gt;</code></pre>
+  <p class="subtle">
+    This is the same <a href="https://docs.joinmastodon.org/user/profile/#fields" rel="noopener noreferrer" target="_blank">verification mechanism</a>
+    Mastodon itself uses for verified profile links.
+  </p>
+  {% if error %}
+    <p class="msg msg-error">{{ error }}</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <label for="id_website_url">Your website URL</label>
+    <input id="id_website_url" name="website_url" type="url" required
+           placeholder="https://example.com/"
+           value="{{ website_url|default:'' }}">
+    <button type="submit">Check my website</button>
+  </form>
+  <p class="subtle" style="margin-top:1rem;">
+    Logged in as <a href="{{ mastodon_profile_url }}" rel="noopener noreferrer" target="_blank">{{ mastodon_profile_url }}</a>
+  </p>
+</section>
+{% endblock %}

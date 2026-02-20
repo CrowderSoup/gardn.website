@@ -93,19 +93,20 @@ def build_authorization_url(
     redirect_uri: str,
     state: str,
     code_challenge: str,
+    scope: str = "",
 ) -> str:
-    query = urlencode(
-        {
-            "me": me,
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "state": state,
-            "response_type": "code",
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-        }
-    )
-    return f"{authorization_endpoint}?{query}"
+    params: dict[str, str] = {
+        "me": me,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "response_type": "code",
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    if scope:
+        params["scope"] = scope
+    return f"{authorization_endpoint}?{urlencode(params)}"
 
 
 def exchange_code_for_token(

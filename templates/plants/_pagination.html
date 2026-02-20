@@ -1,0 +1,16 @@
+{# Usage: {% include "plants/_pagination.html" with page=page_obj param="harvest_page" extra="&q=foo" %} #}
+{% if page.has_other_pages %}
+<nav class="pagination">
+  {% if page.has_previous %}
+    <a href="?{{ param }}={{ page.previous_page_number }}{{ extra }}" class="btn btn-small">← Prev</a>
+  {% else %}
+    <span class="btn btn-small btn-disabled">← Prev</span>
+  {% endif %}
+  <span class="subtle">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}
+    <a href="?{{ param }}={{ page.next_page_number }}{{ extra }}" class="btn btn-small">Next →</a>
+  {% else %}
+    <span class="btn btn-small btn-disabled">Next →</span>
+  {% endif %}
+</nav>
+{% endif %}

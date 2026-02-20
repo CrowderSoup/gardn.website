@@ -44,6 +44,7 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
             redirect_uri=redirect_uri,
             state=state,
             code_challenge=challenge,
+            scope="create",
         )
     except Exception as exc:
         messages.error(request, f"Could not start IndieAuth: {exc}")
@@ -54,6 +55,7 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
         "state": state,
         "code_verifier": verifier,
         "token_endpoint": endpoints["token_endpoint"],
+        "micropub_endpoint": endpoints.get("micropub", ""),
         "next": next_url,
     }
     return redirect(auth_url)
@@ -106,6 +108,7 @@ def auth_callback_view(request: HttpRequest) -> HttpResponse:
     request.session["identity_id"] = identity.id
     request.session["me"] = identity.me_url
     request.session["access_token"] = token_payload["access_token"]
+    request.session["micropub_endpoint"] = pending.get("micropub_endpoint", "")
 
     next_url = pending.get("next") or "/dashboard/"
     del request.session["indieauth_pending"]

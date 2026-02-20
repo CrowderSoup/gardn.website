@@ -10,6 +10,7 @@ class UserIdentity(models.Model):
     photo_url = models.URLField(blank=True)
     bio = models.TextField(blank=True)
     svg_cache = models.TextField(blank=True)
+    show_harvests_on_profile = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

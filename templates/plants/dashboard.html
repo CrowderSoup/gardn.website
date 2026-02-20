@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Dashboard | Gardn{% endblock %}
 {% block content %}
-<h1>Your garden</h1>
+<section class="hero card">
+  <p class="eyebrow">Dashboard</p>
+  <h1>Your garden</h1>
+</section>
 <section class="card profile-card">
   <h2>{{ identity.display_name|default:identity.username }}</h2>
   <p class="subtle"><a href="{{ identity.me_url }}">{{ identity.me_url }}</a></p>
@@ -20,12 +23,93 @@
   <pre>&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}/embed/{{ identity.username }}/roll/" style="border:0;width:100%;height:400px;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"&gt;&lt;/iframe&gt;</pre>
   <h3>Blog roll (JS)</h3>
   <pre>&lt;div data-gardn-roll="{{ identity.username }}"&gt;&lt;/div&gt;&lt;script async src="{{ request.scheme }}://{{ request.get_host }}/gardn.js"&gt;&lt;/script&gt;</pre>
+  <h3>Harvest list (iframe)</h3>
+  <pre>&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}/embed/{{ identity.username }}/harvests/" style="border:0;width:100%;height:600px;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"&gt;&lt;/iframe&gt;</pre>
+  <h3>Harvest list (JS)</h3>
+  <pre>&lt;div data-gardn-harvests="{{ identity.username }}"&gt;&lt;/div&gt;&lt;script async src="{{ request.scheme }}://{{ request.get_host }}/gardn.js"&gt;&lt;/script&gt;</pre>
+  <h3>Profile settings</h3>
+  <form method="post" action="{% url 'profile_settings' %}">
+    {% csrf_token %}
+    <label>
+      <input type="checkbox" name="show_harvests_on_profile"
+             {% if identity.show_harvests_on_profile %}checked{% endif %}
+             onchange="this.form.submit()">
+      Show my harvests on my public profile
+    </label>
+  </form>
 </section>
 
-<section>
-  <h2>Your picks</h2>
+<section class="card">
+  <h2>Harvest bookmarklet</h2>
+  {% if micropub_endpoint %}
+    <p class="subtle">Micropub enabled — harvests can be posted to your website.</p>
+  {% endif %}
+  <p>Drag this to your browser bookmarks bar to quickly harvest URLs:</p>
+  <p>
+    <a class="bookmarklet-link"
+       href="javascript:(function(){var u=encodeURIComponent(window.location.href);var t=encodeURIComponent(document.title);window.open('{{ request.scheme }}://{{ request.get_host }}/harvest/?url='+u+'&amp;title='+t+'&amp;popup=1','gardn-harvest','width=500,height=580,resizable=yes');})();">
+      🌱 Harvest to Gardn
+    </a>
+  </p>
+  <p class="subtle"><a href="/harvest/bookmarklet/">Bookmarklet instructions</a></p>
+</section>
+
+<section class="card">
+  <h2>Your harvests ({{ harvest_page.paginator.count }})</h2>
+  <form method="get" action="" class="harvest-search-wrap">
+    <input name="q"
+           type="search"
+           value="{{ q }}"
+           placeholder="Search by title, URL, note, or tags…"
+           class="harvest-search-input"
+           autocomplete="off">
+    <button type="submit" class="btn btn-small">Search</button>
+    {% if q %}<a href="?" class="btn btn-small">Clear</a>{% endif %}
+  </form>
+  {% if harvest_page.object_list %}
+    <div class="grid harvest-grid">
+      {% for harvest in harvest_page %}
+        <div class="card harvest-card" id="harvest-{{ harvest.id }}">
+          <div class="harvest-card-domain subtle">{{ harvest.url|cut:"https://"|cut:"http://"|truncatechars:40 }}</div>
+          <a class="harvest-card-title" href="{{ harvest.url }}" rel="noopener noreferrer" target="_blank">
+            {{ harvest.title|default:harvest.url|truncatechars:80 }}
+          </a>
+          {% if harvest.note %}
+            <p class="harvest-card-note subtle">{{ harvest.note|truncatechars:120 }}</p>
+          {% endif %}
+          {% with harvest.tags_list as tag_list %}
+            {% if tag_list %}
+              <div class="harvest-tags">
+                {% for tag in tag_list %}<span class="harvest-tag">{{ tag }}</span>{% endfor %}
+              </div>
+            {% endif %}
+          {% endwith %}
+          <div class="harvest-card-footer">
+            <span class="subtle harvest-card-date">{{ harvest.harvested_at|date:"M j, Y" }}</span>
+            {% if harvest.micropub_posted %}<span class="subtle harvest-posted">posted</span>{% endif %}
+            <form method="post" action="/harvest/{{ harvest.id }}/delete/"
+                  hx-post="/harvest/{{ harvest.id }}/delete/"
+                  hx-target="#harvest-{{ harvest.id }}"
+                  hx-swap="outerHTML">
+              {% csrf_token %}
+              <button type="submit" class="btn-small btn-danger">Delete</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    {% include "plants/_pagination.html" with page=harvest_page param="harvest_page" extra=q_param %}
+  {% elif q %}
+    <p class="subtle">No harvests match "{{ q }}".</p>
+  {% else %}
+    <p>No harvests yet. Use the bookmarklet above to save interesting URLs.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Your picks ({{ picks_page.paginator.count }})</h2>
   <div class="grid garden-grid">
-    {% for pick in picks %}
+    {% for pick in picks_page %}
       <a class="card garden-card" href="/u/{{ pick.picked.username }}/">
         <div class="plant-frame">
           <img src="/u/{{ pick.picked.username }}/plant.svg" alt="Plant for {{ pick.picked.username }}" width="120" height="96">
@@ -37,5 +121,6 @@
       <p>No picks yet.</p>
     {% endfor %}
   </div>
+  {% include "plants/_pagination.html" with page=picks_page param="picks_page" extra=q_param %}
 </section>
 {% endblock %}

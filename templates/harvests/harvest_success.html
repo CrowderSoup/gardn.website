@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Harvested | Gardn</title>
+    <link rel="stylesheet" href="/static/css/site.css">
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>Harvested!</h1>
+      <p>{{ title|default:url }} has been added to your gardn.</p>
+      <p><button onclick="window.close()">Close</button></p>
+    </main>
+    <script>setTimeout(function(){ window.close(); }, 2000);</script>
+  </body>
+</html>

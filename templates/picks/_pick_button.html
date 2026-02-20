@@ -1,0 +1,20 @@
+<div id="pick-state" class="pick-box">
+  <p class="pick-count">Picks: {{ pick_count }}</p>
+  {% if viewer %}
+    {% if viewer.id == picked_identity.id %}
+      <p class="subtle">You cannot pick yourself.</p>
+    {% elif has_picked %}
+      <form method="post" action="/unpick/{{ picked_identity.username }}/" hx-post="/unpick/{{ picked_identity.username }}/" hx-target="#pick-state" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit">Unpick</button>
+      </form>
+    {% else %}
+      <form method="post" action="/pick/{{ picked_identity.username }}/" hx-post="/pick/{{ picked_identity.username }}/" hx-target="#pick-state" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit">Pick</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <a class="btn" href="/login/?next={{ request.path|urlencode }}">Login to pick</a>
+  {% endif %}
+</div>

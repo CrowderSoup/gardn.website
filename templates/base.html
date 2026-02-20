@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>{% block title %}Gardn{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/site.css">
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script defer src="/static/js/htmx-csrf.js"></script>
+  </head>
+  <body>
+    <header class="wrap">
+      <a href="/" class="brand">gardn</a>
+      <nav>
+        <a href="/dashboard/">Dashboard</a>
+        {% if request.session.identity_id %}
+          <a href="/logout/">Logout</a>
+        {% else %}
+          <a href="/login/">Login</a>
+        {% endif %}
+      </nav>
+    </header>
+    <main class="wrap">
+      {% for message in messages %}
+        <p class="msg">{{ message }}</p>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

@@ -1,0 +1,4 @@
+gardn.dev {
+  tls internal
+  reverse_proxy web:8000
+}

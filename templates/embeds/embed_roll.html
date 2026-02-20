@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <link rel="stylesheet" href="/static/css/site.css">
+  </head>
+  <body class="embed">
+    <section class="card compact">
+      <h3>{{ identity.display_name|default:identity.username }}'s roll</h3>
+      <ul class="roll-list">
+        {% for row in picks %}
+          <li>
+            <img src="/u/{{ row.picked.username }}/plant.svg" alt="Plant for {{ row.picked.username }}" width="64" height="48">
+            <a href="{{ row.picked.me_url }}" target="_top">{{ row.picked.display_name|default:row.picked.username }}</a>
+          </li>
+        {% empty %}
+          <li>No picks yet.</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </body>
+</html>

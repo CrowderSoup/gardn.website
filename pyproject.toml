@@ -1,0 +1,26 @@
+[project]
+name = "gardn"
+version = "0.1.0"
+description = "IndieWeb plant-based blogroll"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "Django>=5.1,<6",
+  "django-htmx>=1.21.0",
+  "whitenoise>=6.8.2",
+  "python-dotenv>=1.0.1",
+  "requests>=2.32.3",
+  "mf2py>=2.0.1",
+  "dj-database-url>=2.2.0",
+  "psycopg[binary]>=3.2.3",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.4",
+  "pytest-django>=4.9.0",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "gardn.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]

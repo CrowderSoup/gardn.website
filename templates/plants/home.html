@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero card">
+  <p class="eyebrow">IndieWeb garden graph</p>
+  <h1>Grow your IndieWeb garden</h1>
+  <p>Login with your website, get a deterministic plant, and let friends pick it.</p>
+  <p><a class="btn" href="/login/?next=/dashboard/">Start now</a></p>
+</section>
+
+<h2>Newest gardens</h2>
+<div class="grid garden-grid">
+  {% for person in recent_identities %}
+    <a class="card garden-card" href="/u/{{ person.username }}/">
+      <div class="plant-frame">
+        <img src="/u/{{ person.username }}/plant.svg" alt="Plant for {{ person.username }}" width="120" height="96">
+      </div>
+      <strong class="garden-name">{{ person.display_name|default:person.username }}</strong>
+      <small class="garden-meta">{{ person.me_url|cut:"https://"|cut:"http://" }}</small>
+    </a>
+  {% empty %}
+    <p>No plants yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

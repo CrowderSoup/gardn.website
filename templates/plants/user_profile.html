@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ identity.display_name|default:identity.username }} | Gardn{% endblock %}
+{% block content %}
+<h1>{{ identity.display_name|default:identity.username }}</h1>
+<p class="subtle"><a href="{{ identity.me_url }}">{{ identity.me_url }}</a></p>
+{% if identity.photo_url %}
+  <p><img class="profile-photo" src="{{ identity.photo_url }}" alt="Photo for {{ identity.display_name|default:identity.username }}" width="96" height="96" loading="lazy"></p>
+{% endif %}
+{% if identity.bio %}
+  <div class="bio">{{ identity.bio|safe }}</div>
+{% endif %}
+<img class="main-plant" src="/u/{{ identity.username }}/plant.svg" alt="Plant for {{ identity.username }}" width="240" height="192">
+<div id="pick-state">
+  {% include "picks/_pick_button.html" with picked_identity=identity viewer=viewer has_picked=has_picked pick_count=pick_count %}
+</div>
+{% endblock %}

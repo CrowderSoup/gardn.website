@@ -87,6 +87,24 @@ class DiscoveryTests(SimpleTestCase):
 
 
     @patch("indieauth_client.auth.requests.get")
+    def test_parses_single_quoted_link_headers(self, get_mock: Mock) -> None:
+        """jamesg.blog-style: multiple Link headers with single-quoted rel values."""
+        response = Mock()
+        response.headers = {
+            "Link": (
+                "<https://alto.example/auth>; rel='authorization_endpoint', "
+                "<https://alto.example/token>; rel='token_endpoint'"
+            )
+        }
+        response.text = "<html></html>"
+        response.raise_for_status.return_value = None
+        get_mock.return_value = response
+
+        data = discover_endpoints("https://site.example/")
+        self.assertEqual(data["authorization_endpoint"], "https://alto.example/auth")
+        self.assertEqual(data["token_endpoint"], "https://alto.example/token")
+
+    @patch("indieauth_client.auth.requests.get")
     def test_auth_endpoint_only_no_token_endpoint(self, get_mock: Mock) -> None:
         """Sites with only authorization_endpoint (no token_endpoint) should succeed."""
         response = Mock()

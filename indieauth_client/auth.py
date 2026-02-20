@@ -50,7 +50,7 @@ def _parse_link_header(link_header: str) -> dict[str, str]:
     if not link_header:
         return endpoints
     for item in link_header.split(","):
-        match = re.search(r"<([^>]+)>\s*;\s*rel=\"?([^\";]+)\"?", item)
+        match = re.search(r"""<([^>]+)>\s*;\s*rel=[\"']?([^\"';]+)[\"']?""", item)
         if not match:
             continue
         href, rel = match.group(1), match.group(2)

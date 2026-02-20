@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -79,8 +80,22 @@ TEMPLATES = [
 WSGI_APPLICATION = "gardn.wsgi.application"
 ASGI_APPLICATION = "gardn.asgi.application"
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gardn")
-DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gardn").strip()
+if DATABASE_URL in {"", "://"} or "://" not in DATABASE_URL:
+    raise ImproperlyConfigured(
+        "Invalid DATABASE_URL. Expected a full database URL like "
+        "'postgresql://user:password@host:5432/dbname', got: "
+        f"{DATABASE_URL!r}"
+    )
+
+try:
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+except dj_database_url.UnknownSchemeError as exc:
+    raise ImproperlyConfigured(
+        "Invalid DATABASE_URL scheme. Use one of the supported schemes "
+        "(for Postgres: 'postgresql://...'). "
+        f"Got: {DATABASE_URL!r}"
+    ) from exc
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

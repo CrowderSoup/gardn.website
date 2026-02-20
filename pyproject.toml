@@ -13,6 +13,7 @@ dependencies = [
   "mf2py>=2.0.1",
   "dj-database-url>=2.2.0",
   "psycopg[binary]>=3.2.3",
+  "gunicorn>=25.1.0",
 ]
 
 [dependency-groups]

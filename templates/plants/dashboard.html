@@ -52,15 +52,19 @@
 <section class="card">
   <h2>Your harvests ({{ harvest_page.paginator.count }})</h2>
   <form method="get" action="" class="harvest-search-wrap">
+    <label for="dashboard-harvest-search" class="visually-hidden">Search your harvests</label>
     <input name="q"
+           id="dashboard-harvest-search"
            type="search"
            value="{{ q }}"
            placeholder="Search by title, URL, note, or tags…"
            class="harvest-search-input"
+           aria-describedby="dashboard-harvest-search-help"
            autocomplete="off">
     <button type="submit" class="btn btn-small">Search</button>
     {% if q %}<a href="?" class="btn btn-small">Clear</a>{% endif %}
   </form>
+  <p id="dashboard-harvest-search-help" class="subtle">Filter by title, URL, notes, and tags.</p>
   {% if harvest_page.object_list %}
     <div class="grid harvest-grid">
       {% for harvest in harvest_page %}

@@ -1,4 +1,4 @@
-<div id="pick-state" class="pick-box">
+<div id="pick-state" class="pick-box" aria-live="polite">
   <p class="pick-count">Picks: {{ pick_count }}</p>
   {% if viewer %}
     {% if viewer.id == picked_identity.id %}

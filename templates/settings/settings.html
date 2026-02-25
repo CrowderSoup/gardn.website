@@ -10,13 +10,13 @@
   <h2>Profile settings</h2>
   <form method="post" action="{% url 'profile_settings' %}">
     {% csrf_token %}
-    <label>
+    <label class="checkbox-label">
       <input type="checkbox" name="show_harvests_on_profile"
              {% if identity.show_harvests_on_profile %}checked{% endif %}
              onchange="this.form.submit()">
       Show my harvests on my public profile
     </label>
-    <label>
+    <label class="checkbox-label">
       <input type="checkbox" name="animate_plant_motion"
              {% if identity.animate_plant_motion %}checked{% endif %}
              onchange="this.form.submit()">

@@ -12,9 +12,7 @@
     <div class="bio">{{ identity.bio|safe }}</div>
   {% endif %}
   <img class="main-plant" src="/u/{{ identity.username }}/plant.svg" alt="Plant for {{ identity.username }}" width="240" height="192">
-  <div id="pick-state">
-    {% include "picks/_pick_button.html" with picked_identity=identity viewer=viewer has_picked=has_picked pick_count=pick_count %}
-  </div>
+  {% include "picks/_pick_button.html" with picked_identity=identity viewer=viewer has_picked=has_picked pick_count=pick_count %}
 </section>
 
 <section class="card">

@@ -9,9 +9,10 @@
     <script defer src="/static/js/htmx-csrf.js"></script>
   </head>
   <body>
-    <header class="wrap">
-      <a href="/" class="brand">gardn</a>
-      <nav>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="wrap site-header">
+      <a href="/" class="brand" aria-label="Gardn home">gardn</a>
+      <nav aria-label="Primary">
         <a href="/dashboard/">Dashboard</a>
         {% if request.session.identity_id %}
           <a href="/settings/">Settings</a>
@@ -21,9 +22,9 @@
         {% endif %}
       </nav>
     </header>
-    <main class="wrap">
+    <main class="wrap" id="main-content">
       {% for message in messages %}
-        <p class="msg">{{ message }}</p>
+        <p class="msg" role="status">{{ message }}</p>
       {% endfor %}
       {% block content %}{% endblock %}
     </main>

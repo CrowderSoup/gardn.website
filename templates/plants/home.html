@@ -18,15 +18,19 @@
 
 <section class="card">
   <form method="get" action="" class="harvest-search-wrap">
+    <label for="home-search" class="visually-hidden">Search gardens</label>
     <input name="q"
+           id="home-search"
            type="search"
            value="{{ q }}"
            placeholder="Search by username or display name…"
            class="harvest-search-input"
+           aria-describedby="home-search-help"
            autocomplete="off">
     <button type="submit" class="btn btn-small">Search</button>
     {% if q %}<a href="/" class="btn btn-small">Clear</a>{% endif %}
   </form>
+  <p id="home-search-help" class="subtle">Search by username or display name.</p>
 </section>
 
 {% if search_results is not None %}

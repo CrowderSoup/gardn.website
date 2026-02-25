@@ -1,6 +1,6 @@
 {# Usage: {% include "plants/_pagination.html" with page=page_obj param="harvest_page" extra="&q=foo" %} #}
 {% if page.has_other_pages %}
-<nav class="pagination">
+<nav class="pagination" aria-label="Pagination">
   {% if page.has_previous %}
     <a href="?{{ param }}={{ page.previous_page_number }}{{ extra }}" class="btn btn-small">← Prev</a>
   {% else %}

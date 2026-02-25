@@ -48,7 +48,7 @@ def login_start_view(request: HttpRequest) -> HttpResponse:
             redirect_uri=redirect_uri,
             state=state,
             code_challenge=challenge,
-            scope="create" if has_token_endpoint else "",
+            scope="profile create" if has_token_endpoint else "profile",
         )
     except Exception as exc:
         messages.error(request, f"Could not start IndieAuth: {exc}")
@@ -112,11 +112,16 @@ def auth_callback_view(request: HttpRequest) -> HttpResponse:
     if not created and not identity.username:
         identity.username = slug_from_me_url(me)
 
-    card = fetch_hcard(me)
-    if card:
-        identity.display_name = card.get("display_name", "")[:255]
-        identity.photo_url = card.get("photo_url", "")
-        identity.bio = sanitize_user_bio_html(card.get("bio", "")[:5000])[:4000]
+    token_profile = token_payload.get("profile")
+    if token_profile and isinstance(token_profile, dict):
+        identity.display_name = str(token_profile.get("name", ""))[:255]
+        identity.photo_url = str(token_profile.get("photo", ""))
+    else:
+        card = fetch_hcard(me)
+        if card:
+            identity.display_name = card.get("display_name", "")[:255]
+            identity.photo_url = card.get("photo_url", "")
+            identity.bio = sanitize_user_bio_html(card.get("bio", "")[:5000])[:4000]
     identity.save(update_fields=["username", "display_name", "photo_url", "bio", "updated_at"])
 
     request.session["identity_id"] = identity.id

@@ -156,6 +156,71 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
     return redirect("/dashboard/")
 
 
+@require_POST
+def harvest_post_view(request: HttpRequest, harvest_id: int) -> HttpResponse:
+    identity = _current_identity(request)
+    if not identity:
+        return HttpResponse("Unauthorized", status=401)
+
+    harvest = get_object_or_404(Harvest, id=harvest_id, identity=identity)
+    target = request.POST.get("target", "")
+    micropub_endpoint = request.session.get("micropub_endpoint", "")
+    can_post_to_mastodon = (
+        identity.login_method == "mastodon"
+        and bool(identity.mastodon_access_token)
+    )
+
+    warning = None
+    if target == "micropub" and micropub_endpoint:
+        access_token = request.session.get("access_token", "")
+        try:
+            resp = requests.post(
+                micropub_endpoint,
+                data={"h": "entry", "bookmark-of": harvest.url, "name": harvest.title},
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201, 202):
+                harvest.micropub_posted = True
+                harvest.save(update_fields=["micropub_posted"])
+            else:
+                warning = f"Post failed (HTTP {resp.status_code})."
+        except Exception as exc:
+            warning = f"Post failed: {exc}"
+    elif target == "mastodon" and can_post_to_mastodon:
+        from urllib.parse import urlparse as _urlparse
+        parsed = _urlparse(identity.mastodon_profile_url)
+        instance_url = f"{parsed.scheme}://{parsed.netloc}"
+        status_text = _build_mastodon_status(harvest)
+        try:
+            resp = requests.post(
+                f"{instance_url}/api/v1/statuses",
+                json={"status": status_text, "visibility": "public"},
+                headers={"Authorization": f"Bearer {identity.mastodon_access_token}"},
+                timeout=10,
+            )
+            if resp.status_code in (200, 201):
+                harvest.mastodon_posted = True
+                harvest.save(update_fields=["mastodon_posted"])
+            else:
+                warning = f"Post failed (HTTP {resp.status_code})."
+        except Exception as exc:
+            warning = f"Post failed: {exc}"
+
+    if request.headers.get("HX-Request"):
+        if warning:
+            return HttpResponse(f'<span class="subtle harvest-posted harvest-posted-error">{warning}</span>')
+        if target == "mastodon":
+            return HttpResponse('<span class="subtle harvest-posted">posted to mastodon</span>')
+        return HttpResponse('<span class="subtle harvest-posted">posted</span>')
+
+    if warning:
+        messages.warning(request, warning)
+    else:
+        messages.success(request, "Posted successfully.")
+    return redirect("/dashboard/")
+
+
 @require_GET
 def bookmarklet_view(request: HttpRequest) -> HttpResponse:
     identity = _current_identity(request)

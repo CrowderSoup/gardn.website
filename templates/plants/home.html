@@ -16,6 +16,51 @@
 </section>
 {% endif %}
 
+<section class="card">
+  <form method="get" action="" class="harvest-search-wrap">
+    <input name="q"
+           type="search"
+           value="{{ q }}"
+           placeholder="Search by username or display name…"
+           class="harvest-search-input"
+           autocomplete="off">
+    <button type="submit" class="btn btn-small">Search</button>
+    {% if q %}<a href="/" class="btn btn-small">Clear</a>{% endif %}
+  </form>
+</section>
+
+{% if search_results is not None %}
+  <h2>Search results{% if q %} for "{{ q }}"{% endif %}</h2>
+  <div class="grid garden-grid">
+    {% for person in search_results %}
+      <a class="card garden-card" href="/u/{{ person.username }}/">
+        <div class="plant-frame">
+          <img src="/u/{{ person.username }}/plant.svg" alt="Plant for {{ person.username }}" width="120" height="96">
+        </div>
+        <strong class="garden-name">{{ person.display_name|default:person.username }}</strong>
+        <small class="garden-meta">{{ person.me_url|cut:"https://"|cut:"http://" }}</small>
+      </a>
+    {% empty %}
+      <p>No gardens match "{{ q }}".</p>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if popular_identities %}
+  <h2>Most picked</h2>
+  <div class="grid garden-grid">
+    {% for person in popular_identities %}
+      <a class="card garden-card" href="/u/{{ person.username }}/">
+        <div class="plant-frame">
+          <img src="/u/{{ person.username }}/plant.svg" alt="Plant for {{ person.username }}" width="120" height="96">
+        </div>
+        <strong class="garden-name">{{ person.display_name|default:person.username }}</strong>
+        <small class="garden-meta">{{ person.pick_count }} pick{{ person.pick_count|pluralize }}</small>
+      </a>
+    {% endfor %}
+  </div>
+{% endif %}
+
 <h2>Newest gardens</h2>
 <div class="grid garden-grid">
   {% for person in recent_identities %}

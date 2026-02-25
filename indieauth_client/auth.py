@@ -203,17 +203,32 @@ def fetch_hcard(me_url: str) -> dict[str, str]:
     except Exception:
         return {}
 
-    for item in parsed.get("items", []):
-        if "h-card" not in item.get("type", []):
-            continue
-        props = item.get("properties", {})
-        name = _read_prop(props, "name")
-        photo = _read_prop(props, "photo")
-        summary = _read_prop(props, "summary")
-        note = _read_prop(props, "note")
-        bio = summary or note
-        return {"display_name": name, "photo_url": photo, "bio": bio}
-    return {}
+    hcards = [item for item in parsed.get("items", []) if "h-card" in item.get("type", [])]
+
+    # Representative h-card: prefer a card whose url property matches me_url
+    representative = None
+    for item in hcards:
+        urls = item.get("properties", {}).get("url", [])
+        for url_val in urls:
+            if isinstance(url_val, dict):
+                url_val = url_val.get("value") or url_val.get("url") or ""
+            if str(url_val).rstrip("/") == me_url.rstrip("/"):
+                representative = item
+                break
+        if representative:
+            break
+    if not representative and hcards:
+        representative = hcards[0]
+    if not representative:
+        return {}
+
+    props = representative.get("properties", {})
+    name = _read_prop(props, "name")
+    photo = _read_prop(props, "photo")
+    summary = _read_prop(props, "summary")
+    note = _read_prop(props, "note")
+    bio = summary or note
+    return {"display_name": name, "photo_url": photo, "bio": bio}
 
 
 def random_state() -> str:

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Settings | Gardn{% endblock %}
+{% block content %}
+<section class="hero card">
+  <p class="eyebrow">Settings</p>
+  <h1>Account settings</h1>
+</section>
+
+<section class="card">
+  <h2>Profile settings</h2>
+  <form method="post" action="{% url 'profile_settings' %}">
+    {% csrf_token %}
+    <label>
+      <input type="checkbox" name="show_harvests_on_profile"
+             {% if identity.show_harvests_on_profile %}checked{% endif %}
+             onchange="this.form.submit()">
+      Show my harvests on my public profile
+    </label>
+    <label>
+      <input type="checkbox" name="animate_plant_motion"
+             {% if identity.animate_plant_motion %}checked{% endif %}
+             onchange="this.form.submit()">
+      Animate my plant motion
+    </label>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Export data</h2>
+  <p>Download all your harvests and picks as a JSON file.</p>
+  <a class="btn" href="{% url 'export_data' %}">Download export</a>
+</section>
+
+<section class="card danger-zone">
+  <h2>Delete account</h2>
+  <p>This permanently deletes your profile, all harvests, and all picks. This cannot be undone.</p>
+  <details>
+    <summary class="btn btn-danger">Delete my account…</summary>
+    <form method="post" action="{% url 'delete_account' %}" style="margin-top:1rem;">
+      {% csrf_token %}
+      <p>Are you sure? This is permanent.</p>
+      <button type="submit" class="btn btn-danger">Yes, permanently delete my account</button>
+    </form>
+  </details>
+</section>
+{% endblock %}

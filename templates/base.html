@@ -14,6 +14,7 @@
       <nav>
         <a href="/dashboard/">Dashboard</a>
         {% if request.session.identity_id %}
+          <a href="/settings/">Settings</a>
           <a href="/logout/">Logout</a>
         {% else %}
           <a href="/login/">Login</a>

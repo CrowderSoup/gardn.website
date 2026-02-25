@@ -3,8 +3,8 @@ from __future__ import annotations
 import hashlib
 
 from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import HttpRequest, HttpResponse, HttpResponseNotModified
+from django.db.models import Count, Q
+from django.http import HttpRequest, HttpResponse, HttpResponseNotModified, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
@@ -23,8 +23,26 @@ def _current_identity(request: HttpRequest) -> UserIdentity | None:
 
 @require_GET
 def home_view(request: HttpRequest) -> HttpResponse:
+    q = request.GET.get("q", "").strip()
+    if q:
+        results = UserIdentity.objects.filter(
+            Q(username__icontains=q) | Q(display_name__icontains=q)
+        ).order_by("username")[:24]
+    else:
+        results = None
     recent = UserIdentity.objects.order_by("-created_at")[:12]
-    return render(request, "plants/home.html", {"recent_identities": recent, "identity": _current_identity(request)})
+    popular = (
+        UserIdentity.objects.annotate(pick_count=Count("incoming_picks"))
+        .order_by("-pick_count")
+        .filter(pick_count__gt=0)[:12]
+    )
+    return render(request, "plants/home.html", {
+        "recent_identities": recent,
+        "identity": _current_identity(request),
+        "search_results": results,
+        "q": q,
+        "popular_identities": popular,
+    })
 
 
 @require_GET
@@ -36,6 +54,10 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
     from harvests.models import Harvest
 
     micropub_endpoint = request.session.get("micropub_endpoint", "")
+    can_post_to_mastodon = (
+        identity.login_method == "mastodon"
+        and bool(identity.mastodon_access_token)
+    )
 
     q = request.GET.get("q", "").strip()
     harvest_qs = Harvest.objects.filter(identity=identity)
@@ -57,6 +79,7 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
         "q": q,
         "q_param": q_param,
         "micropub_endpoint": micropub_endpoint,
+        "can_post_to_mastodon": can_post_to_mastodon,
     })
 
 
@@ -109,7 +132,49 @@ def profile_settings_view(request: HttpRequest) -> HttpResponse:
         identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "svg_cache", "updated_at"])
     else:
         identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "updated_at"])
-    return redirect("dashboard")
+    return redirect("account_settings")
+
+
+@require_GET
+def account_settings_view(request: HttpRequest) -> HttpResponse:
+    identity = _current_identity(request)
+    if not identity:
+        return redirect("home")
+    return render(request, "settings/settings.html", {"identity": identity})
+
+
+@require_POST
+def delete_account_view(request: HttpRequest) -> HttpResponse:
+    identity = _current_identity(request)
+    if not identity:
+        return HttpResponse("Unauthorized", status=401)
+    identity.delete()  # cascades Harvests, Picks
+    request.session.flush()
+    return redirect("home")
+
+
+@require_GET
+def export_data_view(request: HttpRequest) -> HttpResponse:
+    identity = _current_identity(request)
+    if not identity:
+        return HttpResponse("Unauthorized", status=401)
+    from harvests.models import Harvest
+    harvests = list(Harvest.objects.filter(identity=identity).values(
+        "url", "title", "note", "tags", "harvested_at"
+    ))
+    picks = list(Pick.objects.filter(picker=identity).select_related("picked").values(
+        "picked__username", "picked__me_url", "created_at"
+    ))
+    data = {
+        "username": identity.username,
+        "me_url": identity.me_url,
+        "display_name": identity.display_name,
+        "harvests": harvests,
+        "picks": picks,
+    }
+    response = JsonResponse(data, json_dumps_params={"indent": 2, "default": str})
+    response["Content-Disposition"] = f'attachment; filename="gardn-export-{identity.username}.json"'
+    return response
 
 
 @require_GET

@@ -46,22 +46,7 @@
   <pre>&lt;iframe src="{{ request.scheme }}://{{ request.get_host }}/embed/{{ identity.username }}/harvests/" style="border:0;width:100%;height:600px;" loading="lazy" referrerpolicy="no-referrer-when-downgrade"&gt;&lt;/iframe&gt;</pre>
   <h3>Harvest list (JS)</h3>
   <pre>&lt;div data-gardn-harvests="{{ identity.username }}"&gt;&lt;/div&gt;&lt;script async src="{{ request.scheme }}://{{ request.get_host }}/gardn.js"&gt;&lt;/script&gt;</pre>
-  <h3>Profile settings</h3>
-  <form method="post" action="{% url 'profile_settings' %}">
-    {% csrf_token %}
-    <label>
-      <input type="checkbox" name="show_harvests_on_profile"
-             {% if identity.show_harvests_on_profile %}checked{% endif %}
-             onchange="this.form.submit()">
-      Show my harvests on my public profile
-    </label>
-    <label>
-      <input type="checkbox" name="animate_plant_motion"
-             {% if identity.animate_plant_motion %}checked{% endif %}
-             onchange="this.form.submit()">
-      Animate my plant motion
-    </label>
-  </form>
+  <p><a class="btn" href="{% url 'account_settings' %}">Account settings</a></p>
 </section>
 
 <section class="card">
@@ -90,7 +75,7 @@
           {% with harvest.tags_list as tag_list %}
             {% if tag_list %}
               <div class="harvest-tags">
-                {% for tag in tag_list %}<span class="harvest-tag">{{ tag }}</span>{% endfor %}
+                {% for tag in tag_list %}<a class="harvest-tag" href="?q={{ tag }}">{{ tag }}</a>{% endfor %}
               </div>
             {% endif %}
           {% endwith %}
@@ -100,6 +85,28 @@
               <span class="subtle harvest-posted">posted to mastodon</span>
             {% elif harvest.micropub_posted %}
               <span class="subtle harvest-posted">posted</span>
+            {% endif %}
+            {% if micropub_endpoint and not harvest.micropub_posted %}
+              <form method="post" action="{% url 'harvest_post' harvest.id %}"
+                    hx-post="{% url 'harvest_post' harvest.id %}"
+                    hx-target="this"
+                    hx-swap="outerHTML"
+                    id="harvest-post-micropub-{{ harvest.id }}">
+                {% csrf_token %}
+                <input type="hidden" name="target" value="micropub">
+                <button type="submit" class="btn-small">Post to site</button>
+              </form>
+            {% endif %}
+            {% if can_post_to_mastodon and not harvest.mastodon_posted %}
+              <form method="post" action="{% url 'harvest_post' harvest.id %}"
+                    hx-post="{% url 'harvest_post' harvest.id %}"
+                    hx-target="this"
+                    hx-swap="outerHTML"
+                    id="harvest-post-mastodon-{{ harvest.id }}">
+                {% csrf_token %}
+                <input type="hidden" name="target" value="mastodon">
+                <button type="submit" class="btn-small">Post to Mastodon</button>
+              </form>
             {% endif %}
             <form method="post" action="/harvest/{{ harvest.id }}/delete/"
                   hx-post="/harvest/{{ harvest.id }}/delete/"

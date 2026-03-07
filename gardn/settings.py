@@ -99,6 +99,8 @@ except dj_database_url.UnknownSchemeError as exc:
         f"Got: {DATABASE_URL!r}"
     ) from exc
 
+import ssl as _ssl
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
@@ -106,6 +108,12 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
 CELERY_WORKER_POOL = os.getenv("CELERY_WORKER_POOL", "solo")
 CELERY_WORKER_CONCURRENCY = int(os.getenv("CELERY_WORKER_CONCURRENCY", "1"))
+
+_redis_ssl = {"ssl_cert_reqs": _ssl.CERT_NONE}
+if CELERY_BROKER_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = _redis_ssl
+if CELERY_RESULT_BACKEND.startswith("rediss://"):
+    CELERY_REDIS_BACKEND_USE_SSL = _redis_ssl
 
 CACHES = {
     "default": {

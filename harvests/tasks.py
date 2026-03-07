@@ -6,6 +6,8 @@ from urllib.parse import urlparse
 import requests
 from celery import shared_task
 
+from .cache import invalidate_harvest_stats
+
 
 @shared_task
 def post_to_micropub(harvest_id: int, micropub_endpoint: str, access_token: str) -> None:
@@ -26,6 +28,7 @@ def post_to_micropub(harvest_id: int, micropub_endpoint: str, access_token: str)
         if resp.status_code in (200, 201, 202):
             harvest.micropub_posted = True
             harvest.save(update_fields=["micropub_posted"])
+            invalidate_harvest_stats(harvest.identity_id)
     except Exception:
         pass
 
@@ -64,5 +67,6 @@ def post_to_mastodon(harvest_id: int) -> None:
         if resp.status_code in (200, 201):
             harvest.mastodon_posted = True
             harvest.save(update_fields=["mastodon_posted"])
+            invalidate_harvest_stats(harvest.identity_id)
     except Exception:
         pass

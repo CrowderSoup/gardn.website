@@ -1,0 +1,23 @@
+<p class="harvest-results-count subtle">
+  {% if q %}
+    Showing {{ harvest_page.paginator.count }} of {{ total_count }} harvest{{ total_count|pluralize }}
+  {% else %}
+    {{ total_count }} harvest{{ total_count|pluralize }} in your garden
+  {% endif %}
+</p>
+
+{% if annotated %}
+  <div class="grid harvest-grid" id="harvest-grid">
+    {% for harvest, ripeness in annotated %}
+      {% include "harvests/_harvest_card.html" with harvest=harvest ripeness=ripeness micropub_endpoint=micropub_endpoint can_post_to_mastodon=can_post_to_mastodon %}
+    {% endfor %}
+  </div>
+  {% include "plants/_pagination.html" with page=harvest_page param="page" extra=q_param %}
+{% elif q %}
+  <div class="harvest-empty">
+    <div class="harvest-empty-sprout" aria-hidden="true">🌱</div>
+    <p>No harvests match "{{ q }}".</p>
+  </div>
+{% else %}
+  <p class="subtle">No harvests yet. Use the bookmarklet to save interesting URLs.</p>
+{% endif %}

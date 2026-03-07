@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Your Harvests | Gardn{% endblock %}
+{% block content %}
+<section class="hero card">
+  <p class="eyebrow">Your Garden</p>
+  <h1>Harvests</h1>
+</section>
+
+<div class="harvests-layout">
+
+  <!-- Sidebar -->
+  <aside class="harvests-sidebar">
+    <div class="card garden-stats-card">
+      <div class="garden-plant-preview">
+        <img src="/u/{{ identity.username }}/plant.svg" alt="Your plant" width="120" height="96" loading="lazy">
+      </div>
+      <h2 class="garden-stats-heading">Garden</h2>
+      <ul class="garden-stats-list">
+        <li>
+          <span class="garden-stat-icon" aria-hidden="true">🌱</span>
+          <span><strong>{{ total_count }}</strong> seed{{ total_count|pluralize }} planted</span>
+        </li>
+        <li>
+          <span class="garden-stat-icon" aria-hidden="true">🌿</span>
+          <span><strong>{{ unique_tag_count }}</strong> tag{{ unique_tag_count|pluralize }}</span>
+        </li>
+        <li>
+          <span class="garden-stat-icon" aria-hidden="true">☀️</span>
+          <span>
+            <strong>{{ unposted_count }}</strong> unposted
+            {% if unposted_count > 0 %}
+              <span class="garden-nudge">— these need sunlight</span>
+            {% endif %}
+          </span>
+        </li>
+      </ul>
+
+      <div class="garden-health">
+        <div class="garden-health-label">
+          <span>Garden health</span>
+          <span class="subtle">{{ health_pct }}%</span>
+        </div>
+        <div class="garden-health-meter" role="progressbar" aria-valuenow="{{ health_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Garden health {{ health_pct }}%">
+          <div class="garden-health-fill" style="width: {{ health_pct }}%"></div>
+        </div>
+      </div>
+
+      <p class="subtle"><a href="/harvest/bookmarklet/">Bookmarklet instructions</a></p>
+      <p class="subtle"><a href="/harvest/">+ Add harvest</a></p>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="harvests-main">
+    <div class="harvest-search-wrap">
+      <label for="harvest-search" class="visually-hidden">Search your harvests</label>
+      <input id="harvest-search"
+             name="q"
+             type="search"
+             value="{{ q }}"
+             placeholder="Search by title, URL, note, or tag…"
+             class="harvest-search-input"
+             autocomplete="off"
+             hx-get="/harvests/"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#harvest-results"
+             hx-push-url="true">
+      {% if q %}
+        <button type="button"
+                class="btn btn-small btn-ghost"
+                hx-get="/harvests/"
+                hx-target="#harvest-results"
+                hx-push-url="true"
+                onclick="document.getElementById('harvest-search').value=''">
+          Clear
+        </button>
+      {% endif %}
+    </div>
+    <p class="filter-hint">Filter by title, URL, notes, or tags.</p>
+
+    <div id="harvest-results">
+      {% include "harvests/_results.html" %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Edit modal dialog (populated by HTMX) -->
+<dialog id="harvest-edit-dialog" class="harvest-edit-dialog">
+</dialog>
+
+<script>
+  document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id === 'harvest-edit-dialog') {
+      document.getElementById('harvest-edit-dialog').showModal();
+    }
+  });
+</script>
+{% endblock %}

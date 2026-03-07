@@ -82,25 +82,15 @@ def dashboard_view(request: HttpRequest) -> HttpResponse:
         and bool(identity.mastodon_access_token)
     )
 
-    q = request.GET.get("q", "").strip()
-    harvest_qs = Harvest.objects.filter(identity=identity)
-    if q:
-        harvest_qs = harvest_qs.filter(
-            Q(title__icontains=q) | Q(url__icontains=q) | Q(note__icontains=q) | Q(tags__icontains=q)
-        )
+    harvest_count = Harvest.objects.filter(identity=identity).count()
 
     picks_qs = Pick.objects.filter(picker=identity).select_related("picked").order_by("-created_at")
-
-    harvest_page = Paginator(harvest_qs, 50).get_page(request.GET.get("harvest_page"))
     picks_page = Paginator(picks_qs, 24).get_page(request.GET.get("picks_page"))
-    q_param = f"&q={q}" if q else ""
 
     return render(request, "plants/dashboard.html", {
         "identity": identity,
         "picks_page": picks_page,
-        "harvest_page": harvest_page,
-        "q": q,
-        "q_param": q_param,
+        "harvest_count": harvest_count,
         "micropub_endpoint": micropub_endpoint,
         "can_post_to_mastodon": can_post_to_mastodon,
     })

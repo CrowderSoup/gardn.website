@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import HttpRequest, HttpResponse, HttpResponseNotModified, JsonResponse
@@ -11,7 +12,10 @@ from django.views.decorators.http import require_GET, require_POST
 from picks.models import Pick
 
 from .models import UserIdentity
-from .svg import SVG_RENDER_VERSION, generate_svg
+from .svg import generate_svg
+from .svg_cache import SVG_CACHE_TIMEOUT, invalidate_svg, svg_cache_key
+
+HOME_CACHE_TIMEOUT = 60  # seconds
 
 
 def _current_identity(request: HttpRequest) -> UserIdentity | None:
@@ -28,14 +32,33 @@ def home_view(request: HttpRequest) -> HttpResponse:
         results = UserIdentity.objects.filter(
             Q(username__icontains=q) | Q(display_name__icontains=q)
         ).order_by("username")[:24]
+        recent = cache.get("home:recent")
+        if recent is None:
+            recent = list(UserIdentity.objects.order_by("-created_at")[:12])
+            cache.set("home:recent", recent, timeout=HOME_CACHE_TIMEOUT)
+        popular = cache.get("home:popular")
+        if popular is None:
+            popular = list(
+                UserIdentity.objects.annotate(pick_count=Count("incoming_picks"))
+                .order_by("-pick_count")
+                .filter(pick_count__gt=0)[:12]
+            )
+            cache.set("home:popular", popular, timeout=HOME_CACHE_TIMEOUT)
     else:
         results = None
-    recent = UserIdentity.objects.order_by("-created_at")[:12]
-    popular = (
-        UserIdentity.objects.annotate(pick_count=Count("incoming_picks"))
-        .order_by("-pick_count")
-        .filter(pick_count__gt=0)[:12]
-    )
+        recent = cache.get("home:recent")
+        if recent is None:
+            recent = list(UserIdentity.objects.order_by("-created_at")[:12])
+            cache.set("home:recent", recent, timeout=HOME_CACHE_TIMEOUT)
+        popular = cache.get("home:popular")
+        if popular is None:
+            popular = list(
+                UserIdentity.objects.annotate(pick_count=Count("incoming_picks"))
+                .order_by("-pick_count")
+                .filter(pick_count__gt=0)[:12]
+            )
+            cache.set("home:popular", popular, timeout=HOME_CACHE_TIMEOUT)
+
     return render(request, "plants/home.html", {
         "recent_identities": recent,
         "identity": _current_identity(request),
@@ -121,15 +144,15 @@ def profile_settings_view(request: HttpRequest) -> HttpResponse:
         return HttpResponse("Unauthorized", status=401)
     new_show_harvests = "show_harvests_on_profile" in request.POST
     new_animate_motion = "animate_plant_motion" in request.POST
-    invalidate_svg = (
+    should_invalidate = (
         identity.show_harvests_on_profile != new_show_harvests
         or identity.animate_plant_motion != new_animate_motion
     )
     identity.show_harvests_on_profile = new_show_harvests
     identity.animate_plant_motion = new_animate_motion
-    if invalidate_svg:
-        identity.svg_cache = ""
-        identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "svg_cache", "updated_at"])
+    if should_invalidate:
+        invalidate_svg(identity.username)
+        identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "updated_at"])
     else:
         identity.save(update_fields=["show_harvests_on_profile", "animate_plant_motion", "updated_at"])
     return redirect("account_settings")
@@ -182,9 +205,10 @@ def plant_svg_view(request: HttpRequest, username: str) -> HttpResponse:
     from harvests.models import Harvest
 
     identity = get_object_or_404(UserIdentity, username=username)
-    motion_marker = f"motion:{int(identity.animate_plant_motion)}"
-    render_marker = f"render:{SVG_RENDER_VERSION};{motion_marker}"
-    if not identity.svg_cache or render_marker not in identity.svg_cache:
+    cache_key = svg_cache_key(identity.username)
+    svg = cache.get(cache_key)
+
+    if svg is None:
         harvest_urls = list(Harvest.objects.filter(identity=identity).values_list("url", flat=True))
         pick_count = Pick.objects.filter(Q(picker=identity) | Q(picked=identity)).count()
         svg = generate_svg(
@@ -193,9 +217,7 @@ def plant_svg_view(request: HttpRequest, username: str) -> HttpResponse:
             motion_enabled=identity.animate_plant_motion,
             pick_count=pick_count,
         )
-        identity.svg_cache = svg
-        identity.save(update_fields=["svg_cache", "updated_at"])
-    svg = identity.svg_cache
+        cache.set(cache_key, svg, timeout=SVG_CACHE_TIMEOUT)
 
     etag = hashlib.sha256(svg.encode("utf-8")).hexdigest()
     if request.headers.get("If-None-Match") == etag:

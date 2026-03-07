@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.test import TestCase
 
 from plants.models import UserIdentity
+from plants.svg_cache import svg_cache_key
 
 from .models import Pick
 
@@ -32,28 +34,20 @@ class PickTests(TestCase):
         self.assertTemplateUsed(response, "picks/_pick_button.html")
 
     def test_pick_and_unpick_invalidate_svg_cache_for_both_users(self) -> None:
-        self.a.svg_cache = "<svg>a</svg>"
-        self.a.save(update_fields=["svg_cache"])
-        self.b.svg_cache = "<svg>b</svg>"
-        self.b.save(update_fields=["svg_cache"])
+        cache.set(svg_cache_key(self.a.username), "<svg>a</svg>", timeout=3600)
+        cache.set(svg_cache_key(self.b.username), "<svg>b</svg>", timeout=3600)
 
         session = self.client.session
         session["identity_id"] = self.a.id
         session.save()
 
         self.client.post(f"/pick/{self.b.username}/")
-        self.a.refresh_from_db()
-        self.b.refresh_from_db()
-        self.assertEqual(self.a.svg_cache, "")
-        self.assertEqual(self.b.svg_cache, "")
+        self.assertIsNone(cache.get(svg_cache_key(self.a.username)))
+        self.assertIsNone(cache.get(svg_cache_key(self.b.username)))
 
-        self.a.svg_cache = "<svg>a2</svg>"
-        self.a.save(update_fields=["svg_cache"])
-        self.b.svg_cache = "<svg>b2</svg>"
-        self.b.save(update_fields=["svg_cache"])
+        cache.set(svg_cache_key(self.a.username), "<svg>a2</svg>", timeout=3600)
+        cache.set(svg_cache_key(self.b.username), "<svg>b2</svg>", timeout=3600)
 
         self.client.post(f"/unpick/{self.b.username}/")
-        self.a.refresh_from_db()
-        self.b.refresh_from_db()
-        self.assertEqual(self.a.svg_cache, "")
-        self.assertEqual(self.b.svg_cache, "")
+        self.assertIsNone(cache.get(svg_cache_key(self.a.username)))
+        self.assertIsNone(cache.get(svg_cache_key(self.b.username)))

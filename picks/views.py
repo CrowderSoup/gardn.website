@@ -5,6 +5,7 @@ from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_POST
 
 from plants.models import UserIdentity
+from plants.svg_cache import invalidate_svg
 
 from .models import Pick
 from .rate_limit import hit_rate_limit
@@ -50,7 +51,8 @@ def pick_view(request: HttpRequest, username: str) -> HttpResponse:
 
     if viewer.id != picked.id:
         Pick.objects.get_or_create(picker=viewer, picked=picked)
-        UserIdentity.objects.filter(id__in=[viewer.id, picked.id]).update(svg_cache="")
+        invalidate_svg(viewer.username)
+        invalidate_svg(picked.username)
 
     return _render_pick_state(request, viewer, picked)
 
@@ -70,5 +72,6 @@ def unpick_view(request: HttpRequest, username: str) -> HttpResponse:
         return response
 
     Pick.objects.filter(picker=viewer, picked=picked).delete()
-    UserIdentity.objects.filter(id__in=[viewer.id, picked.id]).update(svg_cache="")
+    invalidate_svg(viewer.username)
+    invalidate_svg(picked.username)
     return _render_pick_state(request, viewer, picked)

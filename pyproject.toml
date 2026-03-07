@@ -14,14 +14,12 @@ dependencies = [
   "dj-database-url>=2.2.0",
   "psycopg[binary]>=3.2.3",
   "gunicorn>=25.1.0",
+  "celery[redis]>=5.4.0",
+  "django-storages[s3]>=1.14.0",
 ]
 
 [dependency-groups]
 dev = [
-  "pytest>=8.3.4",
-  "pytest-django>=4.9.0",
+  "fakeredis>=2.26.0",
+  "moto[s3]>=5.0.0",
 ]
-
-[tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "gardn.settings"
-python_files = ["tests.py", "test_*.py", "*_tests.py"]

@@ -9,7 +9,6 @@ class UserIdentity(models.Model):
     display_name = models.CharField(max_length=255, blank=True)
     photo_url = models.URLField(blank=True)
     bio = models.TextField(blank=True)
-    svg_cache = models.TextField(blank=True)
     show_harvests_on_profile = models.BooleanField(default=False)
     animate_plant_motion = models.BooleanField(default=False)
     login_method = models.CharField(

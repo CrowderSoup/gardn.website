@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-import requests
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpRequest, HttpResponse
@@ -10,8 +9,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from plants.models import UserIdentity
+from plants.svg_cache import invalidate_svg
 
 from .models import Harvest
+from .tasks import post_to_micropub, post_to_mastodon
 
 
 def _current_identity(request: HttpRequest) -> UserIdentity | None:
@@ -27,19 +28,6 @@ def _is_valid_url(url: str) -> bool:
         return parsed.scheme in ("http", "https") and bool(parsed.netloc)
     except Exception:
         return False
-
-
-def _build_mastodon_status(harvest: Harvest) -> str:
-    parts = []
-    if harvest.title:
-        parts.append(f'"{harvest.title}"')
-    parts.append(harvest.url)
-    if harvest.note:
-        parts.append(f"\n{harvest.note}")
-    tags = harvest.tags_list()
-    if tags:
-        parts.append("\n" + " ".join(f"#{t}" for t in tags))
-    return "\n".join(parts)
 
 
 @require_http_methods(["GET", "POST"])
@@ -70,8 +58,8 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
     title = request.POST.get("title", "").strip()
     note = request.POST.get("note", "").strip()
     tags = ", ".join(t.strip() for t in request.POST.get("tags", "").split(",") if t.strip())
-    post_to_micropub = request.POST.get("post_to_micropub") == "true"
-    post_to_mastodon = request.POST.get("post_to_mastodon") == "true"
+    post_to_micropub_flag = request.POST.get("post_to_micropub") == "true"
+    post_to_mastodon_flag = request.POST.get("post_to_mastodon") == "true"
 
     if not url or not _is_valid_url(url):
         return render(request, "harvests/harvest_form.html", {
@@ -96,52 +84,15 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
         harvest.tags = tags
         harvest.save(update_fields=["title", "note", "tags"])
 
-    micropub_warning = None
-    if post_to_micropub and micropub_endpoint:
+    if post_to_micropub_flag and micropub_endpoint:
         access_token = request.session.get("access_token", "")
-        try:
-            resp = requests.post(
-                micropub_endpoint,
-                data={"h": "entry", "bookmark-of": url, "name": title},
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=10,
-            )
-            if resp.status_code in (200, 201, 202):
-                harvest.micropub_posted = True
-                harvest.save(update_fields=["micropub_posted"])
-            else:
-                micropub_warning = f"Harvest saved, but micropub post failed (HTTP {resp.status_code})."
-        except Exception as exc:
-            micropub_warning = f"Harvest saved, but micropub post failed: {exc}"
+        post_to_micropub.delay(harvest.id, micropub_endpoint, access_token)
 
-    mastodon_warning = None
-    if post_to_mastodon and can_post_to_mastodon:
-        from urllib.parse import urlparse as _urlparse
-        parsed = _urlparse(identity.mastodon_profile_url)
-        instance_url = f"{parsed.scheme}://{parsed.netloc}"
-        status_text = _build_mastodon_status(harvest)
-        try:
-            resp = requests.post(
-                f"{instance_url}/api/v1/statuses",
-                json={"status": status_text, "visibility": "public"},
-                headers={"Authorization": f"Bearer {identity.mastodon_access_token}"},
-                timeout=10,
-            )
-            if resp.status_code in (200, 201):
-                harvest.mastodon_posted = True
-                harvest.save(update_fields=["mastodon_posted"])
-            else:
-                mastodon_warning = f"Harvest saved, but Mastodon post failed (HTTP {resp.status_code})."
-        except Exception as exc:
-            mastodon_warning = f"Harvest saved, but Mastodon post failed: {exc}"
+    if post_to_mastodon_flag and can_post_to_mastodon:
+        post_to_mastodon.delay(harvest.id)
 
     # Invalidate SVG cache so plant regenerates with new harvest
-    UserIdentity.objects.filter(pk=identity.pk).update(svg_cache="")
-
-    if micropub_warning:
-        messages.warning(request, micropub_warning)
-    if mastodon_warning:
-        messages.warning(request, mastodon_warning)
+    invalidate_svg(identity.username)
 
     is_popup = request.GET.get("popup") == "1"
     if is_popup:
@@ -170,54 +121,23 @@ def harvest_post_view(request: HttpRequest, harvest_id: int) -> HttpResponse:
         and bool(identity.mastodon_access_token)
     )
 
-    warning = None
+    posted = False
     if target == "micropub" and micropub_endpoint:
         access_token = request.session.get("access_token", "")
-        try:
-            resp = requests.post(
-                micropub_endpoint,
-                data={"h": "entry", "bookmark-of": harvest.url, "name": harvest.title},
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=10,
-            )
-            if resp.status_code in (200, 201, 202):
-                harvest.micropub_posted = True
-                harvest.save(update_fields=["micropub_posted"])
-            else:
-                warning = f"Post failed (HTTP {resp.status_code})."
-        except Exception as exc:
-            warning = f"Post failed: {exc}"
+        post_to_micropub.delay(harvest.id, micropub_endpoint, access_token)
+        posted = True
     elif target == "mastodon" and can_post_to_mastodon:
-        from urllib.parse import urlparse as _urlparse
-        parsed = _urlparse(identity.mastodon_profile_url)
-        instance_url = f"{parsed.scheme}://{parsed.netloc}"
-        status_text = _build_mastodon_status(harvest)
-        try:
-            resp = requests.post(
-                f"{instance_url}/api/v1/statuses",
-                json={"status": status_text, "visibility": "public"},
-                headers={"Authorization": f"Bearer {identity.mastodon_access_token}"},
-                timeout=10,
-            )
-            if resp.status_code in (200, 201):
-                harvest.mastodon_posted = True
-                harvest.save(update_fields=["mastodon_posted"])
-            else:
-                warning = f"Post failed (HTTP {resp.status_code})."
-        except Exception as exc:
-            warning = f"Post failed: {exc}"
+        post_to_mastodon.delay(harvest.id)
+        posted = True
 
     if request.headers.get("HX-Request"):
-        if warning:
-            return HttpResponse(f'<span class="subtle harvest-posted harvest-posted-error">{warning}</span>')
+        if not posted:
+            return HttpResponse('<span class="subtle harvest-posted harvest-posted-error">could not post</span>')
         if target == "mastodon":
             return HttpResponse('<span class="subtle harvest-posted">posted to mastodon</span>')
         return HttpResponse('<span class="subtle harvest-posted">posted</span>')
 
-    if warning:
-        messages.warning(request, warning)
-    else:
-        messages.success(request, "Posted successfully.")
+    messages.success(request, "Posted successfully.")
     return redirect("/dashboard/")
 
 
@@ -237,7 +157,7 @@ def harvest_delete_view(request: HttpRequest, harvest_id: int) -> HttpResponse:
     harvest.delete()
 
     # Invalidate SVG cache
-    UserIdentity.objects.filter(pk=identity.pk).update(svg_cache="")
+    invalidate_svg(identity.username)
 
     if request.headers.get("HX-Request"):
         return HttpResponse(status=200)

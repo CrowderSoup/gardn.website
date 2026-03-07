@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from django.core.cache import cache
 from django.test import TestCase
 
 from .models import UserIdentity
 from .svg import SVG_RENDER_VERSION, _biased_pot_style, generate_svg
+from .svg_cache import svg_cache_key
 
 
 class PlantTests(TestCase):
@@ -35,24 +37,20 @@ class PlantTests(TestCase):
         self.assertLessEqual(low_activity_style, 3)
         self.assertGreaterEqual(high_activity_style, 3)
 
-    def test_endpoint_refreshes_legacy_cache(self) -> None:
-        user = UserIdentity.objects.create(
-            me_url="https://legacy.example/",
-            username="legacy",
-            svg_cache="<svg><!-- render:v1 --></svg>",
-        )
+    def test_svg_view_populates_redis_cache(self) -> None:
+        user = UserIdentity.objects.create(me_url="https://legacy.example/", username="legacy")
+        cache.delete(svg_cache_key(user.username))
         response = self.client.get(f"/u/{user.username}/plant.svg")
         self.assertEqual(response.status_code, 200)
         self.assertIn(f"render:{SVG_RENDER_VERSION}", response.content.decode("utf-8"))
-        user.refresh_from_db()
-        self.assertIn(f"render:{SVG_RENDER_VERSION}", user.svg_cache)
+        self.assertIsNotNone(cache.get(svg_cache_key(user.username)))
 
     def test_profile_settings_toggles_motion_and_invalidates_svg_cache(self) -> None:
         user = UserIdentity.objects.create(
             me_url="https://toggle.example/",
             username="toggle",
-            svg_cache="<svg>cached</svg>",
         )
+        cache.set(svg_cache_key(user.username), "<svg>cached</svg>", timeout=3600)
         session = self.client.session
         session["identity_id"] = user.id
         session.save()
@@ -65,4 +63,4 @@ class PlantTests(TestCase):
 
         user.refresh_from_db()
         self.assertTrue(user.animate_plant_motion)
-        self.assertEqual(user.svg_cache, "")
+        self.assertIsNone(cache.get(svg_cache_key(user.username)))

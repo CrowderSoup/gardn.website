@@ -12,7 +12,12 @@ from plants.models import UserIdentity
 from plants.svg_cache import invalidate_svg
 
 from .models import Harvest
-from .tasks import post_to_micropub, post_to_mastodon
+from .tasks import (
+    post_to_mastodon,
+    post_to_micropub,
+    send_harvest_to_mastodon,
+    send_harvest_to_micropub,
+)
 
 
 def _current_identity(request: HttpRequest) -> UserIdentity | None:
@@ -124,11 +129,9 @@ def harvest_post_view(request: HttpRequest, harvest_id: int) -> HttpResponse:
     posted = False
     if target == "micropub" and micropub_endpoint:
         access_token = request.session.get("access_token", "")
-        post_to_micropub.delay(harvest.id, micropub_endpoint, access_token)
-        posted = True
+        posted = send_harvest_to_micropub(harvest.id, micropub_endpoint, access_token)
     elif target == "mastodon" and can_post_to_mastodon:
-        post_to_mastodon.delay(harvest.id)
-        posted = True
+        posted = send_harvest_to_mastodon(harvest.id)
 
     if request.headers.get("HX-Request"):
         if not posted:

@@ -71,15 +71,47 @@ class HarvestTaskTests(TestCase):
         session["micropub_endpoint"] = "https://micropub.example.com/"
         session["access_token"] = "token123"
         session.save()
-        with patch("harvests.views.post_to_micropub.delay") as mock_task:
-            self.client.post(f"/harvest/{self.harvest.id}/post/", {"target": "micropub"})
-        mock_task.assert_called_once()
+        mock_response = MagicMock(status_code=201)
+        with patch("harvests.tasks.requests.post", return_value=mock_response) as mock_post:
+            response = self.client.post(
+                f"/harvest/{self.harvest.id}/post/",
+                {"target": "micropub"},
+                HTTP_HX_REQUEST="true",
+            )
+        self.harvest.refresh_from_db()
+        self.assertContains(response, "posted")
+        self.assertTrue(self.harvest.micropub_posted)
+        mock_post.assert_called_once()
+
+    def test_harvest_post_view_shows_error_when_micropub_fails(self):
+        session = self.client.session
+        session["micropub_endpoint"] = "https://micropub.example.com/"
+        session["access_token"] = "token123"
+        session.save()
+        mock_response = MagicMock(status_code=500)
+        with patch("harvests.tasks.requests.post", return_value=mock_response):
+            response = self.client.post(
+                f"/harvest/{self.harvest.id}/post/",
+                {"target": "micropub"},
+                HTTP_HX_REQUEST="true",
+            )
+        self.harvest.refresh_from_db()
+        self.assertContains(response, "could not post")
+        self.assertFalse(self.harvest.micropub_posted)
 
     def test_harvest_post_view_dispatches_mastodon(self):
         self.identity.login_method = "mastodon"
         self.identity.mastodon_access_token = "tok"
         self.identity.mastodon_profile_url = "https://mastodon.social/@user"
         self.identity.save()
-        with patch("harvests.views.post_to_mastodon.delay") as mock_task:
-            self.client.post(f"/harvest/{self.harvest.id}/post/", {"target": "mastodon"})
-        mock_task.assert_called_once()
+        mock_response = MagicMock(status_code=200)
+        with patch("harvests.tasks.requests.post", return_value=mock_response) as mock_post:
+            response = self.client.post(
+                f"/harvest/{self.harvest.id}/post/",
+                {"target": "mastodon"},
+                HTTP_HX_REQUEST="true",
+            )
+        self.harvest.refresh_from_db()
+        self.assertContains(response, "posted to mastodon")
+        self.assertTrue(self.harvest.mastodon_posted)
+        mock_post.assert_called_once()

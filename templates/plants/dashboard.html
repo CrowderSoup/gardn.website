@@ -50,85 +50,9 @@
 </section>
 
 <section class="card">
-  <h2>Your harvests ({{ harvest_page.paginator.count }})</h2>
-  <form method="get" action="" class="harvest-search-wrap">
-    <label for="dashboard-harvest-search" class="visually-hidden">Search your harvests</label>
-    <input name="q"
-           id="dashboard-harvest-search"
-           type="search"
-           value="{{ q }}"
-           placeholder="Search by title, URL, note, or tags…"
-           class="harvest-search-input"
-           aria-describedby="dashboard-harvest-search-help"
-           autocomplete="off">
-    <button type="submit" class="btn btn-small">Search</button>
-    {% if q %}<a href="?" class="btn btn-small">Clear</a>{% endif %}
-  </form>
-  <p id="dashboard-harvest-search-help" class="subtle">Filter by title, URL, notes, and tags.</p>
-  {% if harvest_page.object_list %}
-    <div class="grid harvest-grid">
-      {% for harvest in harvest_page %}
-        <div class="card harvest-card" id="harvest-{{ harvest.id }}">
-          <div class="harvest-card-domain subtle">{{ harvest.url|cut:"https://"|cut:"http://"|truncatechars:40 }}</div>
-          <a class="harvest-card-title" href="{{ harvest.url }}" rel="noopener noreferrer" target="_blank">
-            {{ harvest.title|default:harvest.url|truncatechars:80 }}
-          </a>
-          {% if harvest.note %}
-            <p class="harvest-card-note subtle">{{ harvest.note|truncatechars:120 }}</p>
-          {% endif %}
-          {% with harvest.tags_list as tag_list %}
-            {% if tag_list %}
-              <div class="harvest-tags">
-                {% for tag in tag_list %}<a class="harvest-tag" href="?q={{ tag }}">{{ tag }}</a>{% endfor %}
-              </div>
-            {% endif %}
-          {% endwith %}
-          <div class="harvest-card-footer">
-            <span class="subtle harvest-card-date">{{ harvest.harvested_at|date:"M j, Y" }}</span>
-            {% if harvest.mastodon_posted %}
-              <span class="subtle harvest-posted">posted to mastodon</span>
-            {% elif harvest.micropub_posted %}
-              <span class="subtle harvest-posted">posted</span>
-            {% endif %}
-            {% if micropub_endpoint and not harvest.micropub_posted %}
-              <form method="post" action="{% url 'harvest_post' harvest.id %}"
-                    hx-post="{% url 'harvest_post' harvest.id %}"
-                    hx-target="this"
-                    hx-swap="outerHTML"
-                    id="harvest-post-micropub-{{ harvest.id }}">
-                {% csrf_token %}
-                <input type="hidden" name="target" value="micropub">
-                <button type="submit" class="btn-small">Post to site</button>
-              </form>
-            {% endif %}
-            {% if can_post_to_mastodon and not harvest.mastodon_posted %}
-              <form method="post" action="{% url 'harvest_post' harvest.id %}"
-                    hx-post="{% url 'harvest_post' harvest.id %}"
-                    hx-target="this"
-                    hx-swap="outerHTML"
-                    id="harvest-post-mastodon-{{ harvest.id }}">
-                {% csrf_token %}
-                <input type="hidden" name="target" value="mastodon">
-                <button type="submit" class="btn-small">Post to Mastodon</button>
-              </form>
-            {% endif %}
-            <form method="post" action="/harvest/{{ harvest.id }}/delete/"
-                  hx-post="/harvest/{{ harvest.id }}/delete/"
-                  hx-target="#harvest-{{ harvest.id }}"
-                  hx-swap="outerHTML">
-              {% csrf_token %}
-              <button type="submit" class="btn-small btn-danger">Delete</button>
-            </form>
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-    {% include "plants/_pagination.html" with page=harvest_page param="harvest_page" extra=q_param %}
-  {% elif q %}
-    <p class="subtle">No harvests match "{{ q }}".</p>
-  {% else %}
-    <p>No harvests yet. Use the bookmarklet above to save interesting URLs.</p>
-  {% endif %}
+  <h2>Your harvests</h2>
+  <p>{{ harvest_count }} harvest{{ harvest_count|pluralize }} saved in your garden.</p>
+  <p><a class="btn" href="/harvests/">Manage harvests →</a></p>
 </section>
 
 <section class="card">
@@ -146,6 +70,6 @@
       <p>No picks yet.</p>
     {% endfor %}
   </div>
-  {% include "plants/_pagination.html" with page=picks_page param="picks_page" extra=q_param %}
+  {% include "plants/_pagination.html" with page=picks_page param="picks_page" %}
 </section>
 {% endblock %}

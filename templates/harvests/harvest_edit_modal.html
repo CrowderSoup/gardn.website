@@ -1,0 +1,25 @@
+<div class="modal-header">
+  <h2>Edit harvest</h2>
+  <button type="button" class="btn-ghost modal-close" aria-label="Close" onclick="document.getElementById('harvest-edit-dialog').close()">✕</button>
+</div>
+<form method="post"
+      action="{% url 'harvest_edit' harvest.id %}"
+      hx-post="{% url 'harvest_edit' harvest.id %}"
+      hx-target="#harvest-{{ harvest.id }}"
+      hx-swap="outerHTML">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="/harvests/">
+  <label for="edit-title">Title</label>
+  <input id="edit-title" type="text" name="title" value="{{ harvest.title }}" placeholder="Title">
+
+  <label for="edit-note">Note</label>
+  <textarea id="edit-note" name="note" rows="3" placeholder="Optional note">{{ harvest.note }}</textarea>
+
+  <label for="edit-tags">Tags</label>
+  <input id="edit-tags" type="text" name="tags" value="{{ harvest.tags }}" placeholder="comma-separated tags">
+
+  <div class="modal-actions">
+    <button type="submit" class="btn">Save</button>
+    <button type="button" class="btn btn-ghost" onclick="document.getElementById('harvest-edit-dialog').close()">Cancel</button>
+  </div>
+</form>

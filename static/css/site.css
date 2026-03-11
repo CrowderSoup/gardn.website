@@ -561,6 +561,215 @@ pre {
   background: transparent;
 }
 
+/* ── Harvests page layout ─────────────────────────── */
+
+.harvests-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.4rem;
+  align-items: start;
+}
+
+.harvests-sidebar {
+  position: sticky;
+  top: 1rem;
+}
+
+.harvests-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* ── Garden stats sidebar ─────────────────────────── */
+
+.garden-stats-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.garden-plant-preview {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem;
+  background: linear-gradient(180deg, #f8fbf1, #ebf3df);
+  border: 1px solid #d5e0c7;
+  border-radius: 13px;
+}
+
+.garden-stats-heading {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.garden-stats-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.garden-stat-icon {
+  margin-right: 0.35rem;
+}
+
+.garden-nudge {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+
+/* ── Garden health meter ──────────────────────────── */
+
+.garden-health {
+  margin-top: 0.25rem;
+}
+
+.garden-health-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.garden-health-meter {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.garden-health-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width 600ms ease;
+  min-width: 2px;
+}
+
+/* ── Ripeness tints ───────────────────────────────── */
+
+.harvest--ripe {
+  background: linear-gradient(180deg, var(--warm), #fdf9ee);
+}
+
+.harvest--overdue {
+  background: linear-gradient(180deg, var(--warm), #fdf9ee);
+  border-color: var(--warm-line);
+}
+
+/* ── Harvest tag as button ────────────────────────── */
+
+.harvest-tag {
+  background: rgba(47, 122, 74, 0.12);
+  box-shadow: none;
+  cursor: pointer;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+  border: 1px solid rgba(47, 122, 74, 0.2);
+  border-radius: 999px;
+  min-height: unset;
+  letter-spacing: 0;
+  transition: background 140ms ease;
+}
+
+.harvest-tag:hover {
+  background: rgba(47, 122, 74, 0.22);
+  transform: none;
+  filter: none;
+}
+
+/* ── Ghost button variant ─────────────────────────── */
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.btn-ghost:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.7);
+  transform: none;
+  filter: none;
+}
+
+/* ── Edit dialog / modal ──────────────────────────── */
+
+.harvest-edit-dialog {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.4rem;
+  max-width: 480px;
+  width: 90vw;
+  box-shadow: var(--shadow-strong);
+  background: var(--card);
+}
+
+.harvest-edit-dialog::backdrop {
+  background: rgba(19, 39, 34, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+}
+
+.modal-close {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* ── Harvest results count ────────────────────────── */
+
+.harvest-results-count {
+  font-size: 0.88rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Empty state ──────────────────────────────────── */
+
+.harvest-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--ink-soft);
+}
+
+.harvest-empty-sprout {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Filter hint text ─────────────────────────────── */
+
+.filter-hint {
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+  color: var(--ink-soft);
+}
+
 @media (max-width: 920px) {
   .wrap {
     width: min(1040px, 94vw);
@@ -602,6 +811,14 @@ pre {
 
   .pagination .btn {
     min-width: 8rem;
+  }
+
+  .harvests-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .harvests-sidebar {
+    position: static;
   }
 }
 

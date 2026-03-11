@@ -16,6 +16,7 @@
       <nav aria-label="Primary">
         <a href="/dashboard/">Dashboard</a>
         {% if request.session.identity_id %}
+          <a href="/harvests/">Harvests</a>
           <a href="/settings/">Settings</a>
           <a href="/logout/">Logout</a>
         {% else %}

@@ -1,0 +1,71 @@
+<div class="card harvest-card {{ ripeness }}" id="harvest-{{ harvest.id }}">
+  {% if close_modal %}
+  <script>document.getElementById('harvest-edit-dialog').close();</script>
+  {% endif %}
+  <div class="harvest-card-domain subtle">{{ harvest.url|cut:"https://"|cut:"http://"|truncatechars:40 }}</div>
+  <a class="harvest-card-title" href="{{ harvest.url }}" rel="noopener noreferrer" target="_blank">
+    {{ harvest.title|default:harvest.url|truncatechars:80 }}
+  </a>
+  {% if harvest.note %}
+    <p class="harvest-card-note subtle" title="{{ harvest.note }}">{{ harvest.note|truncatechars:120 }}</p>
+  {% endif %}
+  {% with harvest.tags_list as tag_list %}
+    {% if tag_list %}
+      <div class="harvest-tags">
+        {% for tag in tag_list %}
+          <button class="harvest-tag"
+                  hx-get="/harvests/?q={{ tag|urlencode }}"
+                  hx-target="#harvest-results"
+                  hx-push-url="true"
+                  type="button">{{ tag }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <div class="harvest-card-footer">
+    <span class="subtle harvest-card-date">{{ harvest.harvested_at|date:"M j, Y" }}</span>
+    {% if harvest.mastodon_posted %}
+      <span class="subtle harvest-posted">posted to mastodon</span>
+    {% elif harvest.micropub_posted %}
+      <span class="subtle harvest-posted">posted</span>
+    {% endif %}
+    {% if micropub_endpoint and not harvest.micropub_posted %}
+      <form method="post" action="{% url 'harvest_post' harvest.id %}"
+            hx-post="{% url 'harvest_post' harvest.id %}"
+            hx-target="this"
+            hx-swap="outerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="/harvests/">
+        <input type="hidden" name="target" value="micropub">
+        <button type="submit" class="btn-small">Post to site</button>
+      </form>
+    {% endif %}
+    {% if can_post_to_mastodon and not harvest.mastodon_posted %}
+      <form method="post" action="{% url 'harvest_post' harvest.id %}"
+            hx-post="{% url 'harvest_post' harvest.id %}"
+            hx-target="this"
+            hx-swap="outerHTML">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="/harvests/">
+        <input type="hidden" name="target" value="mastodon">
+        <button type="submit" class="btn-small">Post to Mastodon</button>
+      </form>
+    {% endif %}
+    <button class="btn-small btn-ghost"
+            type="button"
+            aria-label="Edit {{ harvest.title|default:harvest.url }}"
+            hx-get="{% url 'harvest_edit' harvest.id %}"
+            hx-target="#harvest-edit-dialog"
+            hx-swap="innerHTML">
+      Edit
+    </button>
+    <form method="post" action="/harvest/{{ harvest.id }}/delete/"
+          hx-post="/harvest/{{ harvest.id }}/delete/"
+          hx-target="#harvest-{{ harvest.id }}"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="/harvests/">
+      <button type="submit" class="btn-small btn-danger" aria-label="Delete {{ harvest.title|default:harvest.url }}">Delete</button>
+    </form>
+  </div>
+</div>

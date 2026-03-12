@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}The Gardn — IndieWeb RPG{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{% static 'game/css/game-shell.css' %}">
+
+<section class="game-shell card">
+  <div class="game-shell-copy">
+    <p class="eyebrow">Verified Adventure</p>
+    <h1>The Gardn</h1>
+    <p class="game-shell-lede">
+      Your website is the source of truth. Publish to your site, scan for proof,
+      and let that activity bloom inside the garden.
+    </p>
+    <div class="game-shell-meta">
+      <span>Hotkeys: `R` scan, `N` note, `B` bookmark, `F` fullscreen</span>
+      <span>Micropub helpers appear automatically when your site supports them.</span>
+    </div>
+  </div>
+
+  <div id="game-root">
+    <div id="game-container"></div>
+  </div>
+</section>
+
+<div id="game-ui-root"></div>
+
+<div class="game-shell-footer subtle">
+  Scan status, pending actions, and neighbor links are now driven by your real site.
+</div>
+
+<!-- NeoCities modal (shown at tutorial step 2 via HTMX) -->
+<div id="neocities-modal-container"></div>
+
+<script>
+  window.GAME_CONFIG = {
+    identityId: "{{ profile.identity_id }}",
+    tutorialStep: {{ profile.tutorial_step }},
+    hasWebsite: {{ profile.has_website|lower }},
+    stateUrl: "{% url 'api_game_state' %}",
+    saveUrl: "{% url 'api_save_position' %}",
+    siteStatusUrl: "{% url 'api_site_status' %}",
+    scanUrl: "{% url 'api_scan_site' %}",
+    harvestUrl: "{% url 'api_harvest_link' %}",
+    plantUrl: "{% url 'api_plant_seed' %}",
+    harvestsUrl: "{% url 'api_unplanted_harvests' %}",
+    publishBookmarkUrl: "{% url 'api_publish_bookmark' %}",
+    publishNoteUrl: "{% url 'api_publish_note' %}",
+    tutorialUrl: "{% url 'api_advance_tutorial' %}",
+    questCompleteUrl: "{% url 'api_complete_quest' %}",
+    csrfToken: "{{ csrf_token }}",
+    staticRoot: "{% static 'game/' %}",
+  };
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.60.0/phaser.min.js"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script type="module" src="{% static 'game/js/game.js' %}"></script>
+{% endblock %}

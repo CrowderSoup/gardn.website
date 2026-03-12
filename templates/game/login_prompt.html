@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}The Gardn — IndieWeb RPG{% endblock %}
+
+{% block content %}
+<div class="login-prompt">
+  <h1>The Gardn</h1>
+  <p class="tagline">The feeds went dark three years ago.</p>
+  <p>
+    The corporations collapsed. The algorithmic feeds went silent. But the people who kept
+    tending their own small corners of the web found each other again — through the old
+    protocols, through links and seeds and hand-tended gardens.
+  </p>
+  <p>
+    This is a top-down RPG where you explore a post-digital world, harvest links,
+    grow your own website garden, and complete quests that teach the principles of the
+    <a href="https://indieweb.org" target="_blank" rel="noopener">IndieWeb</a>.
+  </p>
+  <p>
+    <strong>You need to be logged in to tend your garden.</strong>
+  </p>
+  <a href="/login/" class="btn">Login to play →</a>
+</div>
+{% endblock %}

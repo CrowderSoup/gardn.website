@@ -1,0 +1,27 @@
+<div id="neocities-modal" class="modal">
+  <div class="modal-content">
+    <h2>You need a plot of land.</h2>
+    <p>
+      In the old days, corporations held the land. Now you can claim your own — for free.
+      NeoCities gives you a real corner of the web that belongs to you.
+    </p>
+    <p>
+      <a href="https://neocities.org/new" target="_blank" rel="noopener noreferrer">
+        Create your free site on NeoCities →
+      </a>
+    </p>
+    <form hx-post="{% url 'api_advance_tutorial' %}"
+          hx-target="#neocities-modal"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="step" value="3">
+      <label for="neocities_url">Your new site URL:</label>
+      <input type="url"
+             id="neocities_url"
+             name="neocities_url"
+             placeholder="https://yourname.neocities.org"
+             required>
+      <button type="submit" class="btn">Claim your plot</button>
+    </form>
+  </div>
+</div>

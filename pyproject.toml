@@ -22,4 +22,5 @@ dependencies = [
 dev = [
   "fakeredis>=2.26.0",
   "moto[s3]>=5.0.0",
+  "ruff>=0.15.5",
 ]

@@ -7,7 +7,7 @@ from plants.models import UserIdentity
 
 class Harvest(models.Model):
     identity = models.ForeignKey(UserIdentity, on_delete=models.CASCADE, related_name="harvests")
-    url = models.URLField()
+    url = models.URLField(max_length=2048)
     title = models.CharField(max_length=500, blank=True)
     note = models.TextField(blank=True)
     tags = models.CharField(max_length=500, blank=True)

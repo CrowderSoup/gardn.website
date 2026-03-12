@@ -26,4 +26,5 @@ urlpatterns = [
     path("", include("embeds.urls")),
     path("", include("harvests.urls")),
     path("mastodon/", include("mastodon_auth.urls")),
+    path("game/", include("game.urls")),
 ]

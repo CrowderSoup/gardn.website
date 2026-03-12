@@ -1,0 +1,61 @@
+THE GARDN — GAME ASSET CREDITS
+================================
+
+All art assets used in The Gardn are used under CC-BY-SA 3.0 or CC0 licenses.
+
+LIBERATED PIXEL CUP (LPC) — BASE ASSETS
+-----------------------------------------
+Title: [LPC] Base Assets (Sprites & Map Tiles)
+Authors: Lanea Zimmermann (Sharm), Stephen Challener (Redshrike),
+         Charles Sanchez (CharlesGabriel), Manuel Riecke (MrBeast),
+         Daniel Armstrong (HughSpectrum), and other LPC contributors
+License: CC-BY-SA 3.0 / GPL 3.0
+Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+
+LPC FARMING TILESETS
+---------------------
+Title: [LPC] Farming tilesets, magic animations and UI elements
+Author: Daniel Eddeland (daneeklu)
+License: CC-BY-SA 3.0
+Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+
+LPC CROPS
+----------
+Title: [LPC] Crops
+License: CC-BY-SA 3.0
+Source: https://opengameart.org/content/lpc-crops
+
+LPC PLANT REPACK
+-----------------
+Title: [LPC] Plant Repack
+License: CC-BY-SA 3.0
+Source: https://opengameart.org/content/lpc-plant-repack
+
+POST-APOCALYPTIC TILESET
+-------------------------
+Title: Post-Apocalyptic 16x16 Tileset (Update 1)
+License: CC-BY-SA 3.0
+Source: https://opengameart.org/content/post-apocalyptic-16x16-tileset-update1
+
+LPC CHARACTER GENERATOR
+------------------------
+Title: LPC Character Generator (pflat's version)
+License: CC-BY-SA 3.0 / GPL 3.0
+Source: https://pflat.itch.io/lpc-character-generator
+Note: Download the CREDITS.csv from the generator for full per-layer attribution.
+
+LPC CHARACTER BASES
+--------------------
+Title: [LPC] Character Bases
+License: CC-BY-SA 3.0
+Source: https://opengameart.org/content/lpc-character-bases
+
+FULL LPC CREDITS
+-----------------
+For the complete attribution list for all LPC assets, see:
+https://opengameart.org/content/lpc-collection
+
+SOFTWARE
+---------
+Phaser 3 — MIT License — https://phaser.io
+Tiled Map Editor — GPL 2.0 — https://www.mapeditor.org/

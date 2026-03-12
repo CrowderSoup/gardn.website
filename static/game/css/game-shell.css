@@ -1,0 +1,183 @@
+.game-shell {
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1rem, 2vw, 1.4rem);
+  background:
+    radial-gradient(circle at top right, rgba(255, 205, 116, 0.28), transparent 28%),
+    radial-gradient(circle at left center, rgba(90, 147, 110, 0.18), transparent 36%),
+    linear-gradient(140deg, #fdf9ee, #f4f5eb 48%, #eaf2e2);
+  border-color: #cfdbc1;
+}
+
+.game-shell::before {
+  content: "";
+  position: absolute;
+  inset: auto -12% -34% auto;
+  width: 18rem;
+  height: 18rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(64, 123, 79, 0.12), transparent 72%);
+  pointer-events: none;
+}
+
+.game-shell-copy {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 0.95rem;
+}
+
+.game-shell-copy > * + * {
+  margin-top: 0.55rem;
+}
+
+.game-shell-lede {
+  max-width: 44rem;
+  font-size: 1rem;
+}
+
+.game-shell-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 0.83rem;
+  color: var(--ink-soft);
+}
+
+.game-shell-meta span {
+  padding: 0.32rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(33, 120, 72, 0.12);
+}
+
+#game-root {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.4rem;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(22, 47, 37, 0.92), rgba(14, 31, 25, 0.94)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 65%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 20px 45px rgba(18, 49, 34, 0.22);
+}
+
+#game-container {
+  width: min(960px, 100%);
+  aspect-ratio: 4 / 3;
+  max-width: 100%;
+  min-height: 360px;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(17, 30, 23, 0.88), rgba(11, 18, 15, 0.92));
+  border: 1px solid rgba(230, 243, 225, 0.1);
+}
+
+#game-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
+}
+
+#game-ui-root {
+  position: relative;
+  z-index: 20;
+}
+
+.game-shell-footer {
+  margin-top: 0.85rem;
+  font-size: 0.88rem;
+}
+
+.gardn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background:
+    radial-gradient(circle at top, rgba(247, 226, 159, 0.18), transparent 25%),
+    rgba(11, 19, 15, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.gardn-modal {
+  width: min(28rem, 100%);
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(210, 228, 197, 0.18);
+  background:
+    linear-gradient(180deg, rgba(250, 246, 234, 0.97), rgba(241, 246, 236, 0.98));
+  color: #183126;
+  box-shadow: 0 24px 60px rgba(7, 19, 13, 0.38);
+}
+
+.gardn-modal > * + * {
+  margin-top: 0.85rem;
+}
+
+.gardn-modal h2,
+.gardn-modal h3 {
+  margin: 0;
+}
+
+.gardn-modal p {
+  margin: 0;
+}
+
+.gardn-modal-status {
+  min-height: 1.3rem;
+  font-size: 0.88rem;
+  color: #8b1e1e;
+}
+
+.gardn-modal-field,
+.gardn-modal textarea,
+.gardn-modal select,
+.gardn-modal input {
+  width: 100%;
+}
+
+.gardn-modal input,
+.gardn-modal textarea,
+.gardn-modal select {
+  border-radius: 12px;
+  border: 1px solid rgba(41, 92, 57, 0.26);
+  padding: 0.72rem 0.8rem;
+  font: inherit;
+  color: #173124;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.gardn-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.gardn-modal-actions .btn-secondary {
+  background: linear-gradient(180deg, #53745f, #3e5849);
+}
+
+.gardn-modal-note {
+  font-size: 0.84rem;
+  color: #45614f;
+}
+
+@media (max-width: 760px) {
+  .game-shell-meta {
+    flex-direction: column;
+  }
+
+  #game-container {
+    min-height: 280px;
+  }
+}

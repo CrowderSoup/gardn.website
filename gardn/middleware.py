@@ -18,6 +18,7 @@ class LoginRequiredSessionMiddleware:
         "/static/",
         "/admin/",
         "/harvest/bookmarklet/",
+        "/game/",  # game app handles auth per-view (shows login prompt for unauthenticated)
     )
 
     def __init__(self, get_response):

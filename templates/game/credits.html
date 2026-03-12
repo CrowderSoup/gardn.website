@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Game Credits — The Gardn{% endblock %}
+
+{% block content %}
+<h1>Game Credits</h1>
+<p>
+  The Gardn uses free and open-source art assets. All assets are licensed under
+  Creative Commons Attribution-ShareAlike 3.0 (CC-BY-SA 3.0) or CC0 unless noted.
+</p>
+
+<h2>Art Assets</h2>
+<pre style="white-space: pre-wrap; font-size: 0.875rem; line-height: 1.6;">
+Liberated Pixel Cup (LPC) — Base Assets (Sprites &amp; Map Tiles)
+  Authors: Lanea Zimmermann (Sharm), Stephen Challener (Redshrike), and contributors
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+
+LPC Farming Tilesets, Magic Animations and UI Elements
+  Author: Daniel Eddeland (daneeklu)
+  License: CC-BY-SA 3.0
+  Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+
+LPC Crops
+  License: CC-BY-SA 3.0
+  Source: https://opengameart.org/content/lpc-crops
+
+LPC Plant Repack
+  License: CC-BY-SA 3.0
+  Source: https://opengameart.org/content/lpc-plant-repack
+
+Post-Apocalyptic 16x16 Tileset
+  License: CC-BY-SA 3.0
+  Source: https://opengameart.org/content/post-apocalyptic-16x16-tileset-update1
+
+LPC Character Generator (pflat's version)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://pflat.itch.io/lpc-character-generator
+
+LPC Character Bases
+  License: CC-BY-SA 3.0
+  Source: https://opengameart.org/content/lpc-character-bases
+
+Full LPC credits list: https://opengameart.org/content/lpc-collection
+</pre>
+
+<h2>Software</h2>
+<ul>
+  <li><a href="https://phaser.io" target="_blank" rel="noopener">Phaser 3</a> — MIT License</li>
+  <li><a href="https://www.mapeditor.org/" target="_blank" rel="noopener">Tiled Map Editor</a> — GPL 2.0</li>
+</ul>
+
+<p><a href="{% url 'game_index' %}">← Back to the game</a></p>
+{% endblock %}

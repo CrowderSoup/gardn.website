@@ -183,6 +183,24 @@ class GardenVisit(models.Model):
 class GameProfile(models.Model):
     """Extended profile for the game layer, linked to the existing gardn UserIdentity."""
 
+    BODY_STYLE_FEMININE = "feminine"
+    BODY_STYLE_ANDROGYNOUS = "androgynous"
+    BODY_STYLE_MASCULINE = "masculine"
+
+    BODY_STYLE_CHOICES = [
+        (BODY_STYLE_FEMININE, "Feminine"),
+        (BODY_STYLE_ANDROGYNOUS, "Androgynous"),
+        (BODY_STYLE_MASCULINE, "Masculine"),
+    ]
+
+    GATE_OPEN = "open"
+    GATE_CLOSED = "closed"
+
+    GATE_STATE_CHOICES = [
+        (GATE_OPEN, "Open"),
+        (GATE_CLOSED, "Closed"),
+    ]
+
     identity = models.OneToOneField(
         "plants.UserIdentity",
         on_delete=models.CASCADE,
@@ -200,10 +218,28 @@ class GameProfile(models.Model):
     # 0 = not started, 1-N = tutorial steps, 999 = complete
     has_website = models.BooleanField(default=False)
     neocities_username = models.CharField(max_length=128, blank=True)
+    appearance_configured = models.BooleanField(default=False)
+    body_style = models.CharField(
+        max_length=32,
+        choices=BODY_STYLE_CHOICES,
+        default=BODY_STYLE_ANDROGYNOUS,
+    )
+    skin_tone = models.CharField(max_length=32, default="olive")
+    outfit_key = models.CharField(max_length=32, default="starter")
 
     # Game progression
     links_harvested = models.IntegerField(default=0)
     seeds_planted = models.IntegerField(default=0)
+    garden_name = models.CharField(max_length=80, blank=True)
+    gate_state = models.CharField(
+        max_length=16,
+        choices=GATE_STATE_CHOICES,
+        default=GATE_OPEN,
+    )
+    homestead_level = models.PositiveSmallIntegerField(default=1)
+    path_style = models.CharField(max_length=32, default="stone")
+    fence_style = models.CharField(max_length=32, default="split_rail")
+    read_later_tag = models.CharField(max_length=64, default="read-later")
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -241,6 +277,47 @@ class GardenPlot(models.Model):
 
     def __str__(self) -> str:
         return f"Plot({self.profile.identity}, {self.slot_x},{self.slot_y})"
+
+
+class GardenDecoration(models.Model):
+    """Anchored decor placed around the player's homestead."""
+
+    SLOT_NORTH_WEST = "north_west"
+    SLOT_NORTH_EAST = "north_east"
+    SLOT_SOUTH_WEST = "south_west"
+    SLOT_SOUTH_EAST = "south_east"
+    SLOT_SIGNPOST = "signpost"
+
+    SLOT_CHOICES = [
+        (SLOT_NORTH_WEST, "Northwest"),
+        (SLOT_NORTH_EAST, "Northeast"),
+        (SLOT_SOUTH_WEST, "Southwest"),
+        (SLOT_SOUTH_EAST, "Southeast"),
+        (SLOT_SIGNPOST, "Signpost"),
+    ]
+
+    profile = models.ForeignKey(
+        GameProfile,
+        on_delete=models.CASCADE,
+        related_name="decorations",
+    )
+    slot_key = models.CharField(max_length=32, choices=SLOT_CHOICES)
+    decor_key = models.CharField(max_length=32)
+    variant_key = models.CharField(max_length=32, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "slot_key"],
+                name="game_unique_garden_decoration_slot",
+            )
+        ]
+        ordering = ["slot_key"]
+
+    def __str__(self) -> str:
+        return f"{self.profile.identity}:{self.slot_key}:{self.decor_key}"
 
 
 class Quest(models.Model):
@@ -285,3 +362,39 @@ class QuestProgress(models.Model):
 
     class Meta:
         unique_together = ("profile", "quest")
+
+
+class GrovePresence(models.Model):
+    """Tracks near-real-time grove presence for short-poll social features."""
+
+    identity = models.OneToOneField(
+        "plants.UserIdentity",
+        on_delete=models.CASCADE,
+        related_name="grove_presence",
+    )
+    current_map = models.CharField(max_length=32, default="neighbors")
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.identity}:{self.current_map}"
+
+
+class GroveMessage(models.Model):
+    """Public messages posted in the Neighbor Grove."""
+
+    identity = models.ForeignKey(
+        "plants.UserIdentity",
+        on_delete=models.CASCADE,
+        related_name="grove_messages",
+    )
+    content = models.CharField(max_length=280)
+    is_moderated = models.BooleanField(default=False)
+    moderated_reason = models.CharField(max_length=120, blank=True)
+    moderated_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.identity}: {self.content[:32]}"

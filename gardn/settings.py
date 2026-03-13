@@ -32,6 +32,7 @@ CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", [])
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "https://gardn.dev").rstrip("/")
 GARDN_ADMIN_URLS = {url.rstrip("/") + "/" for url in env_list("GARDN_ADMIN_URLS", [])}
+GARDN_GROVE_CHAT_ENABLED = env_bool("GARDN_GROVE_CHAT_ENABLED", True)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

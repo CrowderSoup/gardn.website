@@ -15,6 +15,11 @@ import { GAME_HUD_LAYOUT, getGameplayViewport } from '../layout.js';
 
 const TILE_SIZE = 32;
 const PLAYER_SPEED = 160;
+const WORLD_DIMENSIONS = {
+  neighbors: { width: 832, height: 704 },
+};
+const NEIGHBOR_GRASS_FRAMES = [1, 4, 7, 10, 13, 16];
+const NEIGHBOR_PATH_FRAMES = [190, 191, 192, 193, 194, 195, 196, 200];
 const MAP_THEMES = {
   overworld: {
     label: 'Crossroads',
@@ -59,22 +64,22 @@ const NPC_DATA = {
     sprite: 'npc-elder',
     cols: 24,
     dialog: [
-      'A healthy garden starts with a healthy site.',
-      'Publish something small. Then scan and let the proof take root.',
+      'The Gardn listens for proof, not promises.',
+      'Write a little something on your own site. Scan it. Then let it bloom here.',
     ],
     tutorialDialog: {
-      1: ['You made it. But you have no plot of land yet.', 'Let me help you claim one.'],
-      5: ['Your homestead is ready.', 'Write on your site, then press R to scan the proof.'],
-      6: ['The scan found a seed.', 'Walk to an empty plot and plant it.'],
-      7: ['Good. A rooted post feeds the whole garden.', 'Keep publishing to water what you have planted.'],
+      1: ['You have the road under your boots now.', 'If you need a starter plot on the web, I can point you toward one.'],
+      5: ['Your homestead is awake.', 'Open your PADD with Tab if you want to tune your look before you keep going.'],
+      6: ['The scan found real proof.', 'Walk to an empty bed and plant that seed.'],
+      7: ['That is the rhythm of this place.', 'Publish, verify, plant, and let your garden tell the truth about your site.'],
     },
   },
   wanderer: {
     name: 'The Wanderer',
     sprite: 'npc-wanderer',
     dialog: [
-      'Neighbors are not unlocked by grinding.',
-      'They arrive when your blogroll, roll embed, or links make them real.',
+      'A neighborhood is not a loot table.',
+      'It forms when your links, rolls, and invitations become real paths.',
     ],
   },
   archivist: {
@@ -82,8 +87,8 @@ const NPC_DATA = {
     sprite: 'npc-archivist',
     cols: 13,
     dialog: [
-      'The library remembers every format that still breathes.',
-      'An h-entry with a real URL is stronger than any rumor.',
+      'The library keeps what your site has already carried home.',
+      'Open your PADD and I will show you the shelves.',
     ],
   },
 };
@@ -102,7 +107,9 @@ export default class WorldScene extends Phaser.Scene {
     this._queuedToast = '';
     this._transitioning = false;
     this._plotElements = [];
+    this._customInteractives = [];
     this._inventoryPromotedListener = null;
+    this._homesteadUpdatedListener = null;
   }
 
   async create() {
@@ -195,6 +202,13 @@ export default class WorldScene extends Phaser.Scene {
     };
     const mapKey = this.currentMapId === 'guest_garden' ? 'map-garden' : `map-${this.currentMapId}`;
 
+    if (this.currentMapId === 'neighbors') {
+      this.map = null;
+      const { width, height } = this._worldDimensions();
+      this.physics.world.setBounds(0, 0, width, height);
+      return;
+    }
+
     try {
       this.map = this.make.tilemap({ key: mapKey });
       const tilesets = this.map.tilesets
@@ -212,12 +226,23 @@ export default class WorldScene extends Phaser.Scene {
     }
   }
 
+  _worldDimensions() {
+    const override = WORLD_DIMENSIONS[this.currentMapId];
+    if (override) return override;
+    if (this.map) {
+      return {
+        width: this.map.widthInPixels,
+        height: this.map.heightInPixels,
+      };
+    }
+    return { width: 640, height: 480 };
+  }
+
   _buildAtmosphere() {
     const theme = MAP_THEMES[this.currentMapId] || MAP_THEMES.overworld;
     this.cameras.main.setBackgroundColor(theme.background);
 
-    const mapWidth = this.map ? this.map.widthInPixels : 640;
-    const mapHeight = this.map ? this.map.heightInPixels : 480;
+    const { width: mapWidth, height: mapHeight } = this._worldDimensions();
 
     this.add.rectangle(mapWidth * 0.5, mapHeight * 0.5, mapWidth, mapHeight, theme.mist, 0.06).setDepth(-4);
     this.add.circle(mapWidth * 0.82, mapHeight * 0.16, 92, theme.glow, 0.08).setDepth(-3);
@@ -235,10 +260,188 @@ export default class WorldScene extends Phaser.Scene {
     }
 
     if (this.currentMapId === 'neighbors') {
-      for (let i = 0; i < 5; i += 1) {
-        this.add.circle(96 + i * 88, 86 + (i % 2) * 28, 24, 0x7bc6a0, 0.12).setDepth(-2);
+      const centerX = mapWidth / 2;
+      const plazaY = 276;
+      this._drawNeighborGround(mapWidth, mapHeight);
+      this.add.rectangle(centerX, mapHeight - 106, 192, 236, 0x846d4f, 0.22).setDepth(-2.3);
+      this.add.rectangle(centerX, mapHeight - 106, 140, 236, 0xd7c391, 0.1).setDepth(-2.2);
+      this.add.circle(centerX, plazaY, 142, 0x13211d, 0.56).setDepth(-2);
+      this.add.circle(centerX, plazaY, 116, 0x7d6b50, 0.24).setDepth(-1.9);
+      this.add.circle(centerX, plazaY, 74, 0x9bcfc6, 0.14).setDepth(-1.8);
+      this.add.circle(centerX, plazaY, 28, 0xf5dda1, 0.18).setDepth(-1.7);
+
+      for (let step = 0; step < 7; step += 1) {
+        this.add.circle(
+          centerX + ((step % 2 === 0) ? -12 : 12),
+          mapHeight - 164 - (step * 46),
+          12 - Math.floor(step / 2),
+          0xf2dfaf,
+          0.28,
+        ).setDepth(-1.6);
+      }
+
+      [
+        { x: 136, y: 156, r: 42 },
+        { x: 190, y: 414, r: 36 },
+        { x: mapWidth - 136, y: 164, r: 42 },
+        { x: mapWidth - 190, y: 428, r: 34 },
+      ].forEach(({ x, y, r }) => {
+        this.add.circle(x, y, r, 0x7bc6a0, 0.11).setDepth(-2.1);
+        this.add.circle(x, y, r - 14, 0x14231d, 0.28).setDepth(-2);
+      });
+
+      this._drawNeighborProps(mapWidth, mapHeight);
+    }
+  }
+
+  _drawNeighborGround(mapWidth, mapHeight) {
+    const cols = Math.ceil(mapWidth / TILE_SIZE);
+    const rows = Math.ceil(mapHeight / TILE_SIZE);
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const frame = NEIGHBOR_GRASS_FRAMES[(row + (col * 2)) % NEIGHBOR_GRASS_FRAMES.length];
+        this.add.image((col * TILE_SIZE) + (TILE_SIZE / 2), (row * TILE_SIZE) + (TILE_SIZE / 2), 'tiles-lpc-base-sheet', frame)
+          .setDepth(-6)
+          .setAlpha(0.94);
       }
     }
+  }
+
+  _addSceneProp(x, y, texture, frame, {
+    depth = 0,
+    scale = 1,
+    alpha = 1,
+    originX = 0.5,
+    originY = 0.5,
+  } = {}) {
+    return this.add.image(x, y, texture, frame)
+      .setDepth(depth)
+      .setScale(scale)
+      .setAlpha(alpha)
+      .setOrigin(originX, originY);
+  }
+
+  _drawNeighborProps(mapWidth, mapHeight) {
+    const centerX = mapWidth / 2;
+    const plazaY = 276;
+    const entryY = mapHeight - 146;
+
+    this._stampNeighborPathField(centerX - 64, entryY - 144, 5, 6);
+    this._stampNeighborPathField(centerX - 96, plazaY - 96, 7, 6);
+    this._drawNeighborGatePaths(mapWidth, mapHeight);
+    this._drawNeighborGreenery(mapWidth, mapHeight);
+    this._drawNeighborRuins(centerX, plazaY, mapHeight);
+  }
+
+  _stampNeighborPathField(startX, startY, columns, rows) {
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < columns; col += 1) {
+        const frame = NEIGHBOR_PATH_FRAMES[(row + (col * 3)) % NEIGHBOR_PATH_FRAMES.length];
+        this._addSceneProp(startX + (col * TILE_SIZE), startY + (row * TILE_SIZE), 'tiles-post-apoc-sheet', frame, {
+          depth: -1.15,
+          scale: 2,
+        });
+      }
+    }
+  }
+
+  _drawNeighborGatePaths(mapWidth, mapHeight) {
+    const centerX = mapWidth / 2;
+    const laneY = mapHeight - 160;
+    const slots = this._neighborGroveSlots(mapWidth, mapHeight);
+    const anchorKeys = new Set();
+
+    slots.forEach((slot) => {
+      const key = `${slot.anchorX}:${slot.anchorY}`;
+      if (anchorKeys.has(key)) return;
+      anchorKeys.add(key);
+      this._stampNeighborPathField(slot.anchorX - 16, slot.anchorY - 16, 2, 2);
+    });
+
+    [
+      { x: centerX - 16, y: laneY - 16, columns: 2, rows: 2 },
+      { x: centerX - 16, y: laneY - 80, columns: 2, rows: 2 },
+      { x: centerX - 16, y: laneY - 144, columns: 2, rows: 2 },
+      { x: centerX - 16, y: laneY - 208, columns: 2, rows: 2 },
+      { x: centerX - 16, y: laneY - 272, columns: 2, rows: 2 },
+      { x: centerX - 16, y: laneY - 336, columns: 2, rows: 2 },
+      { x: centerX - 80, y: 246, columns: 2, rows: 2 },
+      { x: centerX + 16, y: 246, columns: 2, rows: 2 },
+      { x: centerX - 144, y: 304, columns: 2, rows: 2 },
+      { x: centerX + 80, y: 304, columns: 2, rows: 2 },
+      { x: centerX - 176, y: 366, columns: 2, rows: 2 },
+      { x: centerX + 112, y: 366, columns: 2, rows: 2 },
+      { x: centerX - 160, y: 430, columns: 2, rows: 2 },
+      { x: centerX + 96, y: 430, columns: 2, rows: 2 },
+    ].forEach(({ x, y, columns, rows }) => {
+      this._stampNeighborPathField(x, y, columns, rows);
+    });
+  }
+
+  _drawNeighborGreenery(mapWidth, mapHeight) {
+    const edgeClusters = [
+      { x: 76, y: 84, frame: 0, scale: 1 },
+      { x: 116, y: 126, frame: 1, scale: 1 },
+      { x: 98, y: 470, frame: 12, scale: 1 },
+      { x: 140, y: 522, frame: 15, scale: 1 },
+      { x: mapWidth - 76, y: 92, frame: 3, scale: 1 },
+      { x: mapWidth - 118, y: 134, frame: 2, scale: 1 },
+      { x: mapWidth - 102, y: 476, frame: 13, scale: 1 },
+      { x: mapWidth - 144, y: 530, frame: 14, scale: 1 },
+    ];
+    edgeClusters.forEach(({ x, y, frame, scale }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: -0.7,
+        scale,
+        alpha: 0.94,
+      });
+    });
+
+    [
+      { x: 166, y: 204, frame: 17 },
+      { x: 190, y: 250, frame: 18 },
+      { x: mapWidth - 164, y: 208, frame: 17 },
+      { x: mapWidth - 188, y: 252, frame: 18 },
+      { x: 180, y: mapHeight - 168, frame: 16 },
+      { x: mapWidth - 178, y: mapHeight - 170, frame: 16 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: -0.45,
+        alpha: 0.9,
+      });
+    });
+  }
+
+  _drawNeighborRuins(centerX, plazaY, mapHeight) {
+    [
+      { x: centerX - 256, y: 206 },
+      { x: centerX + 256, y: 206 },
+      { x: centerX - 286, y: mapHeight - 208 },
+      { x: centerX + 286, y: mapHeight - 208 },
+    ].forEach(({ x, y }) => {
+      this._addSceneProp(x, y, 'tiles-post-apoc-sheet', 200, {
+        depth: 0.55,
+        scale: 2,
+        alpha: 0.92,
+      });
+      this._addSceneProp(x, y - 24, 'tiles-post-apoc-sheet', 220, {
+        depth: 0.6,
+        scale: 2,
+        alpha: 0.9,
+      });
+    });
+
+    [
+      { x: centerX - 82, y: plazaY - 150, frame: 26 },
+      { x: centerX + 82, y: plazaY - 150, frame: 27 },
+      { x: centerX - 104, y: mapHeight - 140, frame: 60 },
+      { x: centerX + 104, y: mapHeight - 140, frame: 63 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-farming-sheet', frame, {
+        depth: 0.7,
+        alpha: 0.92,
+      });
+    });
   }
 
   _buildPlayer() {
@@ -252,6 +455,12 @@ export default class WorldScene extends Phaser.Scene {
         startX = spawnObj.x + TILE_SIZE / 2;
         startY = spawnObj.y + TILE_SIZE / 2;
       }
+    }
+
+    const spawnOverride = this._spawnOverride();
+    if (spawnOverride) {
+      startX = spawnOverride.x;
+      startY = spawnOverride.y;
     }
 
     const COLS = 13;
@@ -279,14 +488,47 @@ export default class WorldScene extends Phaser.Scene {
       }
     });
 
-    this.player.tileX = this.gameState.player.tile_x || 10;
-    this.player.tileY = this.gameState.player.tile_y || 10;
+    this.player.tileX = Math.floor(startX / TILE_SIZE);
+    this.player.tileY = Math.floor(startY / TILE_SIZE);
     this._facing = 'down';
+    this._applyPlayerStyle();
     setPlayerSnapshot({ x: this.player.x, y: this.player.y, tileX: this.player.tileX, tileY: this.player.tileY, facing: this._facing });
+  }
+
+  _spawnOverride() {
+    if (this.currentMapId !== 'neighbors' || this._spawnName !== 'player_start') return null;
+    const { width: mapWidth, height: mapHeight } = this._worldDimensions();
+    return {
+      x: mapWidth / 2,
+      y: mapHeight - 208,
+    };
+  }
+
+  _applyPlayerStyle() {
+    if (!this.player) return;
+    const appearance = this.gameState?.appearance || {};
+    const tone = {
+      porcelain: 0xf3d9c6,
+      sunset: 0xddb394,
+      olive: 0xc09c75,
+      amber: 0xa36b47,
+      umbral: 0x714834,
+    }[appearance.skin_tone] || 0xc09c75;
+    const outfitTone = {
+      starter: 0x7bb08a,
+    }[appearance.outfit_key] || 0x7bb08a;
+    const scale = {
+      feminine: 0.97,
+      androgynous: 1,
+      masculine: 1.04,
+    }[appearance.body_style] || 1;
+    this.player.setTint(tone, tone, outfitTone, outfitTone);
+    this.player.setScale(scale);
   }
 
   _buildNPCs() {
     this.npcs = this.physics.add.staticGroup();
+    this._customInteractives = [];
     if (this.map) {
       const npcLayer = this.map.getObjectLayer('NPCs');
       npcLayer?.objects.forEach((obj) => {
@@ -310,65 +552,160 @@ export default class WorldScene extends Phaser.Scene {
 
   _buildNeighborNPCs() {
     const neighbors = this.gameState.neighbors || [];
+    const { width: mapWidth, height: mapHeight } = this._worldDimensions();
+    const sign = this.add.text(mapWidth / 2, 60, 'NEIGHBOR GROVE', {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#f6f0c7',
+      backgroundColor: 'rgba(13, 25, 20, 0.78)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5).setDepth(5);
+    const subtitle = this.add.text(mapWidth / 2, 84, neighbors.length
+      ? 'A reclaimed square of rooted gates and quiet ruins.'
+      : 'The ruins are waiting for your first rooted neighbor.', {
+      fontFamily: 'monospace',
+      fontSize: '8px',
+      color: '#d9efe0',
+      backgroundColor: 'rgba(13, 25, 20, 0.46)',
+      padding: { x: 6, y: 3 },
+    }).setOrigin(0.5).setDepth(5);
+    this._plotElements.push(sign, subtitle);
+
     if (!neighbors.length) return;
 
-    const mapWidth = this.map ? this.map.widthInPixels : 512;
-    const columnCount = neighbors.length > 12 ? 5 : 4;
-    const spacingX = columnCount === 5 ? 84 : 96;
-    const spacingY = neighbors.length > 8 ? 64 : 76;
-    const startY = neighbors.length > 15 ? 112 : 136;
-
-    neighbors.forEach((neighbor, index) => {
-      const row = Math.floor(index / columnCount);
-      const column = index % columnCount;
-      const rowStartIndex = row * columnCount;
-      const itemsInRow = Math.min(columnCount, neighbors.length - rowStartIndex);
-      const rowWidth = (itemsInRow - 1) * spacingX;
-      const x = (mapWidth / 2) - (rowWidth / 2) + (column * spacingX);
-      const y = startY + (row * spacingY) + ((column % 2) * 8);
+    const slots = this._neighborGroveSlots(mapWidth, mapHeight);
+    neighbors.slice(0, slots.length).forEach((neighbor, index) => {
+      const slot = slots[index];
+      const x = slot.x;
+      const y = slot.y;
       const canVisit = Boolean(neighbor.visitable && neighbor.username);
       const displayName = neighbor.display_name || neighbor.username || neighbor.target_url || 'Neighbor';
       const relationshipLabel = (neighbor.relationship || 'neighbor link').replace(/_/g, ' ');
-      const npc = this.npcs.create(x, y, 'npc-archivist', 130);
-      npc.setDepth(5);
-      npc.body.setSize(18, 18);
-      npc.body.setOffset(22, 36);
-      npc.setAlpha(canVisit ? 1 : 0.68);
-      npc.setTint(canVisit ? 0xffffff : 0xb8c8c2);
-      npc.npcId = `neighbor-${neighbor.username || index}`;
-      npc.npcData = {
-        name: displayName,
-        dialog: canVisit
-          ? [
-            `${displayName} was discovered through your ${relationshipLabel}.`,
-            neighbor.target_url,
-            `Step closer and you can cross into ${displayName}'s garden.`,
-          ]
-          : [
-            `${displayName} is part of your ${relationshipLabel}.`,
-            neighbor.target_url,
-            'Their garden gate is not rooted in Gardn yet, so this is a remembered contact for now.',
-          ],
-        guestUsername: canVisit ? neighbor.username : '',
-      };
+      const gateColor = canVisit ? 0x8bd7c2 : 0x6e7f79;
+      const connectorLength = Phaser.Math.Distance.Between(slot.anchorX, slot.anchorY, x, y - 12);
+      const connectorAngle = Phaser.Math.RadToDeg(Phaser.Math.Angle.Between(slot.anchorX, slot.anchorY, x, y - 12));
+      const connector = this.add.rectangle(
+        (slot.anchorX + x) / 2,
+        (slot.anchorY + y - 12) / 2,
+        connectorLength,
+        16,
+        canVisit ? 0x968a72 : 0x6f624e,
+        canVisit ? 0.46 : 0.28,
+      ).setDepth(1.2).setAngle(connectorAngle);
+      connector.setStrokeStyle(1, canVisit ? 0xe3d8b4 : 0x8b7c63, canVisit ? 0.34 : 0.16);
+      const gatePad = this.add.circle(x, y + 16, 26, 0x13211d, 0.62).setDepth(3.7);
+      gatePad.setStrokeStyle(1, 0xdbc892, 0.18);
+      const archLeft = this.add.rectangle(x - 11, y + 2, 6, 28, 0x2a362f, 0.96).setDepth(4.3);
+      const archRight = this.add.rectangle(x + 11, y + 2, 6, 28, 0x2a362f, 0.96).setDepth(4.3);
+      const gateLintel = this.add.arc(x, y - 11, 14, 14, 180, 360, false, 0x2a362f, 0.98).setDepth(4.35);
+      const door = this.add.rectangle(x, y + 6, 18, 22, canVisit ? 0x18352d : 0x23302d, 0.96).setDepth(4.32);
+      door.setStrokeStyle(2, gateColor, 0.9);
+      const gateGlow = this.add.circle(x, y + 2, 24, gateColor, canVisit ? 0.14 : 0.06)
+        .setDepth(4.1)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      const lockSigil = canVisit
+        ? this.add.circle(x, y + 4, 4, 0xf5dda1, 0.85).setDepth(4.5)
+        : this.add.rectangle(x, y + 4, 8, 8, 0xcbbd8c, 0.84).setDepth(4.5).setAngle(45);
+      const plaque = this.add.text(x, y + 40, displayName.slice(0, 12).toUpperCase(), {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: canVisit ? '#eafff4' : '#c6d2cd',
+        backgroundColor: 'rgba(10, 20, 16, 0.72)',
+        padding: { x: 4, y: 2 },
+      }).setOrigin(0.5).setDepth(5);
+      const status = this.add.text(x, y + 54, canVisit ? 'ROOTED' : 'UNROOTED', {
+        fontFamily: 'monospace',
+        fontSize: '7px',
+        color: canVisit ? '#b7f7de' : '#98aba4',
+      }).setOrigin(0.5).setDepth(5);
+      this._plotElements.push(
+        connector,
+        gatePad,
+        archLeft,
+        archRight,
+        gateLintel,
+        door,
+        gateGlow,
+        lockSigil,
+        plaque,
+        status,
+      );
 
-      const marker = this.add.circle(x, y + 24, 10, canVisit ? 0x8bd7c2 : 0x6e7f79, canVisit ? 0.22 : 0.14)
-        .setDepth(4);
       this.tweens.add({
-        targets: marker,
-        alpha: canVisit ? 0.38 : 0.22,
-        scale: canVisit ? 1.22 : 1.08,
-        duration: canVisit ? 760 : 980,
+        targets: gateGlow,
+        alpha: canVisit ? 0.32 : 0.14,
+        scaleX: canVisit ? 1.08 : 1.03,
+        scaleY: canVisit ? 1.08 : 1.03,
+        duration: canVisit ? 780 : 980,
         yoyo: true,
         repeat: -1,
         ease: 'Sine.InOut',
       });
+
+      this._customInteractives.push({
+        x,
+        y: y + 12,
+        npcId: `neighbor-${neighbor.username || index}`,
+        npcData: {
+          name: displayName,
+          dialog: canVisit
+            ? [
+              `${displayName}'s gate rooted itself through your ${relationshipLabel}.`,
+              neighbor.target_url,
+              `Step through and you can visit ${displayName}'s garden.`,
+            ]
+            : [
+              `${displayName} is remembered through your ${relationshipLabel}.`,
+              neighbor.target_url,
+              'The path is marked, but the gate is still unrooted. Keep tending the relationship.',
+            ],
+          guestUsername: canVisit ? neighbor.username : '',
+        },
+      });
     });
+
+    if (neighbors.length > slots.length) {
+      const overflowCount = neighbors.length - slots.length;
+      const overflow = this.add.text(mapWidth / 2, mapHeight - 154, `+${overflowCount} more paths will appear as the grove expands`, {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: '#d6ead7',
+        backgroundColor: 'rgba(13, 25, 20, 0.62)',
+        padding: { x: 6, y: 3 },
+      }).setOrigin(0.5).setDepth(5);
+      this._plotElements.push(overflow);
+    }
+  }
+
+  _neighborGroveSlots(mapWidth, mapHeight) {
+    const centerX = mapWidth / 2;
+    const laneX = centerX;
+    return [
+      { x: centerX - 224, y: 152, anchorX: laneX - 92, anchorY: 246 },
+      { x: centerX - 112, y: 116, anchorX: laneX - 44, anchorY: 226 },
+      { x: centerX + 112, y: 116, anchorX: laneX + 44, anchorY: 226 },
+      { x: centerX + 224, y: 152, anchorX: laneX + 92, anchorY: 246 },
+      { x: centerX - 312, y: 244, anchorX: laneX - 176, anchorY: 314 },
+      { x: centerX - 176, y: 228, anchorX: laneX - 84, anchorY: 294 },
+      { x: centerX + 176, y: 228, anchorX: laneX + 84, anchorY: 294 },
+      { x: centerX + 312, y: 244, anchorX: laneX + 176, anchorY: 314 },
+      { x: centerX - 320, y: 344, anchorX: laneX - 196, anchorY: 386 },
+      { x: centerX - 192, y: 332, anchorX: laneX - 108, anchorY: 372 },
+      { x: centerX + 192, y: 332, anchorX: laneX + 108, anchorY: 372 },
+      { x: centerX + 320, y: 344, anchorX: laneX + 196, anchorY: 386 },
+      { x: centerX - 304, y: 458, anchorX: laneX - 182, anchorY: 462 },
+      { x: centerX - 176, y: 444, anchorX: laneX - 102, anchorY: 454 },
+      { x: centerX + 176, y: 444, anchorX: laneX + 102, anchorY: 454 },
+      { x: centerX + 304, y: 458, anchorX: laneX + 182, anchorY: 462 },
+      { x: centerX - 232, y: mapHeight - 196, anchorX: laneX - 128, anchorY: mapHeight - 232 },
+      { x: centerX - 120, y: mapHeight - 214, anchorX: laneX - 68, anchorY: mapHeight - 240 },
+      { x: centerX + 120, y: mapHeight - 214, anchorX: laneX + 68, anchorY: mapHeight - 240 },
+      { x: centerX + 232, y: mapHeight - 196, anchorX: laneX + 128, anchorY: mapHeight - 232 },
+    ];
   }
 
   _portalDirection(x, y, width, height) {
-    const mapWidth = this.map ? this.map.widthInPixels : 640;
-    const mapHeight = this.map ? this.map.heightInPixels : 480;
+    const { width: mapWidth, height: mapHeight } = this._worldDimensions();
     if (y <= TILE_SIZE / 2) return 'down';
     if (y + height >= mapHeight - TILE_SIZE / 2) return 'up';
     if (x <= TILE_SIZE / 2) return 'right';
@@ -487,6 +824,19 @@ export default class WorldScene extends Phaser.Scene {
       this._drawPortalVisual(x, y, width, height, targetMap, portalColor);
     };
 
+    if (this.currentMapId === 'neighbors') {
+      const { width: mapWidth, height: mapHeight } = this._worldDimensions();
+      createPortal((mapWidth / 2) - 80, mapHeight - 112, 160, 64, 'overworld', 'player_start', 0x7be0c6);
+      this.add.text(mapWidth / 2, mapHeight - 126, 'RETURN TO THE CROSSROADS', {
+        fontFamily: 'monospace',
+        fontSize: '8px',
+        color: '#e7fae4',
+        backgroundColor: 'rgba(9, 20, 15, 0.76)',
+        padding: { x: 5, y: 3 },
+      }).setOrigin(0.5).setDepth(8);
+      return;
+    }
+
     if (this.map && this.currentMapId !== 'guest_garden') {
       const portalLayer = this.map.getObjectLayer('Portals');
       portalLayer?.objects.forEach((obj) => {
@@ -541,8 +891,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   _buildCamera() {
-    const mapWidth = this.map ? this.map.widthInPixels : 640;
-    const mapHeight = this.map ? this.map.heightInPixels : 480;
+    const { width: mapWidth, height: mapHeight } = this._worldDimensions();
     const layout = {
       ...GAME_HUD_LAYOUT,
       width: this.cameras.main.width,
@@ -557,8 +906,8 @@ export default class WorldScene extends Phaser.Scene {
   _worldLabelText() {
     if (this.currentMapId === 'guest_garden') {
       const owner = this._activeGardenOwner();
-      const ownerName = owner?.display_name || owner?.username || 'Neighbor';
-      return `${ownerName}'s Garden`;
+      const homesteadName = getRuntimeState().guestGarden?.homestead?.garden_name;
+      return homesteadName || `${owner?.display_name || owner?.username || 'Neighbor'}'s Garden`;
     }
     return MAP_THEMES[this.currentMapId]?.label || this.currentMapId;
   }
@@ -573,8 +922,16 @@ export default class WorldScene extends Phaser.Scene {
       : (this.gameState?.garden || []);
   }
 
+  _activeHomestead() {
+    return this.currentMapId === 'guest_garden'
+      ? (getRuntimeState().guestGarden?.homestead || {})
+      : (this.gameState?.homestead || {});
+  }
+
   update() {
-    const modalOpen = this.scene.isActive('DialogScene') || this.scene.isActive('PlantScene');
+    const modalOpen = this.scene.isActive('DialogScene')
+      || this.scene.isActive('PlantScene')
+      || Boolean(getRuntimeState().ui?.paddOpen);
     if (this._transitioning || !this.player || !this.player.body || !this.cursors || modalOpen) {
       return;
     }
@@ -620,7 +977,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   _updateInteractLabel() {
-    const targets = this.npcs?.getChildren() || [];
+    const targets = [...(this.npcs?.getChildren() || []), ...(this._customInteractives || [])];
     const reach = TILE_SIZE * 2;
     const px = this.player.x;
     const py = this.player.y;
@@ -644,6 +1001,10 @@ export default class WorldScene extends Phaser.Scene {
   _tryInteract() {
     const target = this._nearestNPC();
     if (target) {
+      if (typeof target.onInteract === 'function') {
+        target.onInteract();
+        return;
+      }
       this._openDialog(target);
       return;
     }
@@ -678,7 +1039,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   _nearestNPC() {
-    const targets = this.npcs?.getChildren() || [];
+    const targets = [...(this.npcs?.getChildren() || []), ...(this._customInteractives || [])];
     const reach = TILE_SIZE * 2;
     let nearest = null;
     let nearestDist = Infinity;
@@ -699,6 +1060,12 @@ export default class WorldScene extends Phaser.Scene {
     const onClose = () => {
       if (target.npcId === 'elder_aldyn' && step === 1) this._advanceTutorialStep(2);
       if (target.npcId === 'wanderer' && step === 7 && (this.gameState.neighbors || []).length) this._advanceTutorialStep(8);
+      if (target.npcId === 'archivist') {
+        window.dispatchEvent(new CustomEvent('gardn:open-padd', { detail: { tab: 'library' } }));
+      }
+      if (target.npcId === 'wanderer' && this.currentMapId === 'neighbors') {
+        window.dispatchEvent(new CustomEvent('gardn:open-padd', { detail: { tab: 'neighbors' } }));
+      }
       if (target.npcData?.guestUsername) this._visitNeighborGarden(target.npcData.guestUsername);
     };
     this.scene.launch('DialogScene', {
@@ -719,6 +1086,9 @@ export default class WorldScene extends Phaser.Scene {
     this._gardenPlots = [];
     const offsetX = 64;
     const offsetY = 64;
+    const gridWidth = TILE_SIZE * 8;
+    const gridHeight = TILE_SIZE * 8;
+    this._drawHomesteadFrame(offsetX, offsetY, gridWidth, gridHeight);
     for (let gy = 0; gy < 8; gy += 1) {
       for (let gx = 0; gx < 8; gx += 1) {
         const wx = offsetX + gx * TILE_SIZE;
@@ -731,11 +1101,125 @@ export default class WorldScene extends Phaser.Scene {
         this._gardenPlots.push({ gx, gy, wx, wy, planted: Boolean(planted) });
       }
     }
+    this._drawGardenDecorations(offsetX, offsetY, gridWidth, gridHeight);
   }
 
   _clearGardenElements() {
     this._plotElements.forEach((element) => element.destroy());
     this._plotElements = [];
+  }
+
+  _drawHomesteadFrame(offsetX, offsetY, gridWidth, gridHeight) {
+    const homestead = this._activeHomestead();
+    const owner = this._activeGardenOwner();
+    const pathColor = {
+      stone: 0xb59e87,
+      clover: 0x5a8148,
+      sunbaked: 0xc69062,
+    }[homestead.path_style] || 0xb59e87;
+    const fenceColor = {
+      split_rail: 0x7b5935,
+      hedge: 0x477041,
+      woven: 0x8d6848,
+    }[homestead.fence_style] || 0x7b5935;
+
+    const title = this.add.text(offsetX + (gridWidth / 2), offsetY - 26, homestead.garden_name || owner?.garden_name || 'Homestead Garden', {
+      fontFamily: 'monospace',
+      fontSize: '10px',
+      color: '#f4f8dd',
+      backgroundColor: 'rgba(17, 29, 22, 0.72)',
+      padding: { x: 7, y: 4 },
+    }).setOrigin(0.5).setDepth(4);
+    this._plotElements.push(title);
+
+    const walkway = this.add.rectangle(offsetX + (gridWidth / 2), offsetY + gridHeight + 18, gridWidth + 58, 24, pathColor, 0.58).setDepth(0.8);
+    walkway.setStrokeStyle(1, 0xf4e0b5, 0.18);
+    this._plotElements.push(walkway);
+
+    const fenceSegments = [
+      this.add.rectangle(offsetX + (gridWidth / 2), offsetY - 8, gridWidth + 20, 6, fenceColor, 0.9),
+      this.add.rectangle(offsetX - 8, offsetY + (gridHeight / 2), 6, gridHeight + 18, fenceColor, 0.9),
+      this.add.rectangle(offsetX + gridWidth + 8, offsetY + (gridHeight / 2), 6, gridHeight + 18, fenceColor, 0.9),
+      this.add.rectangle(offsetX + (gridWidth / 2) - 66, offsetY + gridHeight + 2, (gridWidth / 2) - 36, 6, fenceColor, 0.9),
+      this.add.rectangle(offsetX + (gridWidth / 2) + 66, offsetY + gridHeight + 2, (gridWidth / 2) - 36, 6, fenceColor, 0.9),
+    ];
+    fenceSegments.forEach((segment) => {
+      segment.setDepth(1.1);
+      this._plotElements.push(segment);
+    });
+  }
+
+  _drawGardenDecorations(offsetX, offsetY, gridWidth, gridHeight) {
+    const homestead = this._activeHomestead();
+    const owner = this._activeGardenOwner();
+    const bySlot = new Map((homestead.decorations || []).map((decoration) => [decoration.slot_key, decoration]));
+    const slotPositions = {
+      north_west: { x: offsetX - 22, y: offsetY + 8 },
+      north_east: { x: offsetX + gridWidth + 22, y: offsetY + 8 },
+      south_west: { x: offsetX - 22, y: offsetY + gridHeight - 20 },
+      south_east: { x: offsetX + gridWidth + 22, y: offsetY + gridHeight - 20 },
+      signpost: { x: offsetX + gridWidth + 34, y: offsetY + gridHeight + 6 },
+    };
+    const drawDecoration = (slotKey, decoration) => {
+      const position = slotPositions[slotKey];
+      if (!position || !decoration) return;
+      const key = decoration.decor_key;
+      if (key === 'lantern' || key === 'stone_lantern') {
+        const pole = this.add.rectangle(position.x, position.y, 6, 24, 0x6d573f, 1).setDepth(2.6);
+        const glow = this.add.circle(position.x, position.y - 14, key === 'stone_lantern' ? 7 : 5, 0xf7dd9f, 0.28)
+          .setDepth(2.8)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this._plotElements.push(pole, glow);
+        return;
+      }
+      if (key === 'bench') {
+        const bench = this.add.rectangle(position.x, position.y, 18, 8, 0x7b5935, 1).setDepth(2.5);
+        this._plotElements.push(bench);
+        return;
+      }
+      if (key === 'birdbath') {
+        const bowl = this.add.circle(position.x, position.y - 6, 9, 0x8bb6c2, 0.68).setDepth(2.6);
+        const stand = this.add.rectangle(position.x, position.y + 8, 4, 16, 0x8d8b84, 1).setDepth(2.5);
+        this._plotElements.push(bowl, stand);
+        return;
+      }
+      if (key === 'planter') {
+        const box = this.add.rectangle(position.x, position.y + 6, 20, 12, 0x8a5d39, 1).setDepth(2.5);
+        const bloom = this.add.circle(position.x, position.y - 2, 8, 0x8fd08d, 0.8).setDepth(2.6);
+        this._plotElements.push(box, bloom);
+        return;
+      }
+      if (key === 'trellis' || key === 'archway') {
+        const frame = this.add.rectangle(position.x, position.y, 20, 32, 0x7d6147, 1).setDepth(2.5);
+        frame.setStrokeStyle(2, 0xb8d39a, 0.45);
+        this._plotElements.push(frame);
+        return;
+      }
+      if (key === 'signpost') {
+        const post = this.add.rectangle(position.x, position.y, 5, 28, 0x7c5f40, 1).setDepth(2.6);
+        const sign = this.add.rectangle(position.x + 14, position.y - 8, 24, 14, 0xcfa86d, 0.96).setDepth(2.7);
+        sign.setStrokeStyle(1, 0x6e4f2f, 0.9);
+        const label = this.add.text(position.x + 14, position.y - 8, 'LINK', {
+          fontFamily: 'monospace',
+          fontSize: '7px',
+          color: '#2e2417',
+        }).setOrigin(0.5).setDepth(2.8);
+        this._plotElements.push(post, sign, label);
+        this._customInteractives.push({
+          x: position.x + 14,
+          y: position.y - 8,
+          onInteract: () => {
+            const link = owner?.garden_url || window.GAME_CONFIG.shareGardenUrl;
+            window.open(link, '_blank', 'noopener');
+            this._showToast('Opened this garden in a new tab.');
+          },
+        });
+      }
+    };
+
+    ['north_west', 'north_east', 'south_west', 'south_east', 'signpost'].forEach((slotKey) => {
+      drawDecoration(slotKey, bySlot.get(slotKey));
+    });
   }
 
   _drawPlant(wx, wy, plotData) {
@@ -759,12 +1243,17 @@ export default class WorldScene extends Phaser.Scene {
 
   _canUseHotkey(event) {
     if (areHotkeysSuspended(event)) return false;
-    return !this.scene.isActive('DialogScene') && !this.scene.isActive('PlantScene');
+    return !this.scene.isActive('DialogScene')
+      && !this.scene.isActive('PlantScene')
+      && !Boolean(getRuntimeState().ui?.paddOpen);
   }
 
   _bindRuntimeListeners() {
     if (this._inventoryPromotedListener) {
       window.removeEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
+    }
+    if (this._homesteadUpdatedListener) {
+      window.removeEventListener('gardn:homestead-updated', this._homesteadUpdatedListener);
     }
     this._inventoryPromotedListener = (event) => {
       if (!this.scene.isActive('WorldScene')) return;
@@ -783,13 +1272,23 @@ export default class WorldScene extends Phaser.Scene {
           : `${promotedCount} pending verifications bloomed into seeds.`,
       );
     };
+    this._homesteadUpdatedListener = () => {
+      if (!this.scene.isActive('WorldScene')) return;
+      this.syncRuntimeState({
+        rebuildGarden: this.currentMapId === 'garden' || this.currentMapId === 'guest_garden',
+      });
+      this._showToast('Homestead details updated.');
+    };
     window.addEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
+    window.addEventListener('gardn:homestead-updated', this._homesteadUpdatedListener);
   }
 
   syncRuntimeState({ rebuildGarden = false } = {}) {
     this.gameState = getRuntimeState().server || this.gameState;
+    this._applyPlayerStyle();
     this._syncProgressHints();
-    if (rebuildGarden && this.currentMapId === 'garden') this._buildGardenPlots();
+    if (this._worldLabel) this._worldLabel.setText(this._worldLabelText());
+    if (rebuildGarden && (this.currentMapId === 'garden' || this.currentMapId === 'guest_garden')) this._buildGardenPlots();
   }
 
   showToast(message, fill = '#eff9d7') {
@@ -984,6 +1483,10 @@ export default class WorldScene extends Phaser.Scene {
     if (this._inventoryPromotedListener) {
       window.removeEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
       this._inventoryPromotedListener = null;
+    }
+    if (this._homesteadUpdatedListener) {
+      window.removeEventListener('gardn:homestead-updated', this._homesteadUpdatedListener);
+      this._homesteadUpdatedListener = null;
     }
   }
 

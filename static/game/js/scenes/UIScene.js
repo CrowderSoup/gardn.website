@@ -92,20 +92,19 @@ export default class UIScene extends Phaser.Scene {
     const activeQuest = claimableQuest || (server.quests || []).find((quest) => quest.status !== 'complete');
 
     this.seedText.setText(`SEEDS ${player.links_harvested || 0}`);
-    this.pendingText.setText(`PENDING ${player.pending_count || 0}`);
-    this.neighborText.setText(`NEIGHBORS ${player.neighbor_count || 0}`);
-    this.healthText.setText(`HEALTH ${activeHealth.score || 0}`);
+    this.pendingText.setText(`WAITING ${player.pending_count || 0}`);
+    this.neighborText.setText(`GATES ${player.neighbor_count || 0}`);
+    this.healthText.setText(`BLOOM ${activeHealth.score || 0}`);
     this.mapText.setText(this._labelForMap(runtime.currentMapId));
 
     if (guestGarden) {
       const ownerLabel = activeOwner.display_name || activeOwner.username || 'Neighbor';
       const pollination = activeHealth.recent_visitor_count || 0;
       const bloom = (activeHealth.label || 'fragile').toUpperCase();
-      this.siteText.setText(`VISITING ${ownerLabel} | POLLINATION ${pollination} | ${bloom}`);
+      this.siteText.setText(`VISITING ${ownerLabel} | POLLINATION ${pollination} | ${bloom} | TAB PADD`);
     } else {
       const siteLabel = (siteStatus.status || 'never').replace(/_/g, ' ').toUpperCase();
-      const issueLabel = siteStatus.issues?.length ? ` | ${siteStatus.issues.join(', ')}` : '';
-      this.siteText.setText(`SITE ${siteLabel}${issueLabel} | POLLINATION ${activeHealth.recent_visitor_count || 0}`);
+      this.siteText.setText(`SITE ${siteLabel} | POLLINATION ${activeHealth.recent_visitor_count || 0} | TAB PADD`);
     }
 
     if (activeQuest) {

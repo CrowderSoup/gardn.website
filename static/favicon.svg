@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Gardn</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f7f3df" />
+      <stop offset="100%" stop-color="#dce9cf" />
+    </linearGradient>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3f7f4e" />
+      <stop offset="100%" stop-color="#1e4d33" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)" />
+  <path d="M19 40c0-11.5 9.1-21 20.5-21H45v5.2c0 12.9-10.4 23.3-23.3 23.3H19V40Z" fill="url(#leaf)" />
+  <path d="M23 44c7.6-5.2 13.6-11.6 18-19.1" fill="none" stroke="#f7f3df" stroke-linecap="round" stroke-width="3.2" />
+  <circle cx="45" cy="19" r="4" fill="#f1c86a" />
+</svg>

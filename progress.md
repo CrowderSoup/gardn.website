@@ -172,3 +172,140 @@ Original prompt: We're building a Gardn game (in the app `game` inside this repo
 - Notes:
   - This is intentionally a "where we are so far" snapshot, not a future-state design doc.
   - `GardenScene` is still present in code, but the active playable journey runs through `WorldScene` plus overlay scenes/modals.
+
+## 2026-03-13 Public beta systems pass
+
+- Implemented the first large public-beta feature slice across backend and client:
+  - Added persisted appearance settings (`body_style`, `skin_tone`, `outfit_key`) plus `appearance_configured`.
+  - Added homestead settings (`garden_name`, `gate_state`, `homestead_level`, `path_style`, `fence_style`, `read_later_tag`) and anchored `GardenDecoration`.
+  - Added Neighbor Grove social data models for short-poll presence and public chat (`GrovePresence`, `GroveMessage`).
+- Backend/API work:
+  - Extended `/game/api/state/` with `appearance`, `homestead`, `library_summary`, `padd_badges`, `gate_state`, and grove summary data.
+  - Added endpoints for profile updates, homestead updates, decor placement, paginated Link Library data, grove presence listing/heartbeat, and grove message listing/posting.
+  - Updated guest-garden access to require both a rooted neighbor link and an open host gate.
+  - Added a migration plus backfill for garden names on existing profiles.
+- Frontend/gameplay work:
+  - Added a DOM-based PADD overlay opened with `Tab` or an on-screen button.
+  - Shipped five tabs: Seeds, Library, Quests, Neighbors, and Profile.
+  - Added forced first-launch profile setup via the PADD before play fully opens up.
+  - Reworked the Neighbor Grove presentation from cloned NPCs toward gate/plaque visuals and connected the Archivist/Wanderer to the new PADD tabs.
+  - Made homestead customization visible in-world with styled path/fence framing, decor sockets, signpost interactions, and light player appearance styling.
+  - Slimmed the HUD copy and updated tutorial copy toward the new beta flow.
+  - Retired the unused `GardenScene` from the active Phaser scene list.
+- Validation:
+  - `UV_CACHE_DIR=/tmp/uv-cache uv run python -m py_compile game/views.py game/models.py tests/test_game.py`
+  - `node --check static/game/js/state.js`
+  - `node --check static/game/js/padd.js`
+  - `node --check static/game/js/game.js`
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `node --check static/game/js/scenes/TutorialScene.js`
+  - `node --check static/game/js/scenes/UIScene.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+- Browser smoke note:
+  - Re-attempted the shared Playwright loop. The client script can run if copied under `/tmp/codex-playwright`, but a meaningful authenticated smoke remains blocked locally because the app still requires a real login/session flow and the available local settings use non-shared fake-cache sessions.
+- Follow-up ideas:
+  - Add a local debug login/session path or switch the smoke environment to a shared session backend so the Playwright authenticated flow can finally cover in-world states.
+  - Add richer player sprite variations or layered art so appearance choices are more visually distinct than the current tint/scale treatment.
+
+## 2026-03-13 PADD regression cleanup
+
+- Fixed the Firefox-side profile form validation warning by removing the native `pattern` attribute from the read-later tag input and validating it in JS before submit.
+- Fixed the large white bar seen over gameplay while the PADD is open:
+  - Switched the PADD panel to border-box sizing.
+  - Prevented horizontal overflow on the shell/panel.
+  - Added `min-width: 0` safeguards to grid/form children so wide controls do not force a horizontal scrollbar.
+- Disabled Phaser audio boot for now (`audio.noAudio = true`) since the game does not currently ship sound, which avoids the browser's auto-start `AudioContext` warning.
+- Added a real site favicon (`static/favicon.svg`) and wired it into `templates/base.html` so browsers stop falling back to `/favicon.ico`.
+- Validation:
+  - `node --check static/game/js/padd.js`
+  - `node --check static/game/js/game.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+- Browser smoke note:
+  - I verified a local Django server can be started for smoke work on `http://127.0.0.1:8010/`, but the shared Playwright client still cannot complete a run on this machine because the Playwright Chromium binary has not been downloaded yet (`npx playwright install` needed).
+  - Even after that browser install, an authenticated in-world smoke would still need either a scripted local login path or a shared session backend because `gardn.test_settings` uses in-process fake-cache sessions that do not survive across the server/browser boundary.
+
+## 2026-03-13 PADD hidden-state fix
+
+- Fixed a follow-up regression where the PADD shell could still cover the game while "closed".
+- Root cause: `.gardn-padd-shell { display: flex; }` and similar button styles were overriding the browser's default `[hidden] { display: none; }` behavior.
+- Added explicit `[hidden]` rules for the PADD shell, button, and badge in `static/game/css/game-shell.css` so closed PADD UI truly leaves the playfield clickable again.
+
+## 2026-03-13 Neighbor Grove safety + facelift pass
+
+- Fixed the trap where players could get wedged between locked neighbor gates and lose access to the return portal.
+- Reworked the grove layout in `static/game/js/scenes/WorldScene.js`:
+  - Neighbor gates are no longer solid physics bodies; they are now proximity interactives, so they can still be examined/entered without blocking movement.
+  - Replaced the dense grid with a more deliberate plaza layout that keeps the center lane open.
+  - Added a clearer reclaimed-square atmosphere pass, with a central plaza and an obvious route from the grove interior back to the exit.
+  - Added a much wider custom return portal plus a `RETURN TO THE CROSSROADS` label.
+  - Moved the default Neighbor Grove spawn to a safe entrance position instead of dropping the player into the middle of the gate cluster.
+  - Corrected initial player tile coordinates so saved position starts from the actual spawn point.
+- Validation:
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `node --check static/game/js/game.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+- Browser smoke note:
+  - Re-ran the shared Playwright client, but it still cannot launch locally because the Playwright Chromium binary has not been downloaded yet (`npx playwright install` needed).
+
+## 2026-03-13 Neighbor Grove bounce-back follow-up
+
+- Investigated a new report that entering the Neighbor Grove could immediately kick the player back out again.
+- Root cause:
+  - The custom Neighbor Grove spawn override only applied when entering via a portal spawn (`player_start`), and the original override position sat too close to the new oversized return portal.
+  - That meant a real transition from the Crossroads could land the player inside the return portal overlap zone and instantly bounce them back to the Crossroads.
+- Fix:
+  - Moved the Neighbor Grove entry spawn farther up the center lane in `static/game/js/scenes/WorldScene.js`.
+  - Added a test-settings-only `/game/playwright-login/` helper route so local Playwright smoke runs can create a real authenticated session without touching production auth flows.
+  - Added a regression test covering that smoke-login route.
+- Validation:
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+  - Local Playwright browser run now succeeds end-to-end with the shared client after `npx playwright install`.
+  - A direct authenticated load into `current_map: "neighbors"` stayed in the grove instead of immediately returning to `overworld`.
+- Remaining smoke limitation:
+  - I could not fully automate the exact Crossroads-to-Grove walking transition with the shared client because its current virtual-time stepping under-moves the player in the overworld. The server/browser state after the direct grove load is good, and the portal-overlap root cause has been patched in code.
+
+## 2026-03-13 Neighbor Grove size + art pass
+
+- Expanded the Neighbor Grove into a larger bespoke scene instead of the tiny placeholder tilemap:
+  - Added a world-size override so the grove can be substantially wider/taller than the old 16x16 map.
+  - Stopped using the tiny tiled neighbor map for rendering and now draw the grove as a scene-authored square.
+- Added better asset usage from `static/game/assets/tilesets/`:
+  - Loaded the tilesets as sprite sheets in `BootScene` so they can be used as actual scene props instead of only as map tiles.
+  - Built a grassy reclaimed ground pass from `lpc-base`.
+  - Added market-stall, crate, barrel, hay, boardwalk, and trellis details from `lpc-farming` and `lpc-crops` around the grove to make it feel more like a town square.
+  - Spread the neighbor gate slots out across the larger space so the grove reads as a plaza with lanes, not a cramped grid.
+- Validation:
+  - `node --check static/game/js/scenes/BootScene.js`
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+  - Authenticated local Playwright load into `/game/` still boots into `current_map: "neighbors"` with the new art/layout pass.
+- Note:
+  - The shared Playwright client still captures black WebGL screenshots in headless mode on this machine, so the most reliable automated verification artifact here is the emitted `render_game_to_text` state plus the absence of console errors.
+- Follow-up validation:
+  - Re-ran the authenticated local Playwright smoke against `http://127.0.0.1:8010/game/playwright-login/?username=playwright&map=neighbors&next=/game/`.
+  - The first captured state still shows the title boot before auth/state hydration finishes, but the settled state (`state-2.json`) lands in `current_map: "neighbors"` with the enlarged grove loaded and no console-error artifact emitted.
+  - Re-ran:
+    - `node --check static/game/js/scenes/BootScene.js`
+    - `node --check static/game/js/scenes/WorldScene.js`
+    - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+    - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+
+## 2026-03-13 Neighbor Grove pathing cleanup
+
+- Followed up on visual feedback that the grove felt like random produce clutter instead of a believable plaza.
+- Reworked the grove dressing in `static/game/js/scenes/WorldScene.js`:
+  - Removed the fish / fruit / market scatter pass.
+  - Added a more intentional path language built from `post-apoc-16` paver tiles for the main entry lane, plaza floor, and branch nodes toward the gates.
+  - Shifted the gate connectors to read more like path spurs instead of wooden clutter.
+  - Kept the scene alive with grass clumps and light ruin markers around the edges rather than dumping item props into the square.
+- Validation:
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - Authenticated Playwright smoke still settles into `current_map: "neighbors"` with no console-error artifact emitted.

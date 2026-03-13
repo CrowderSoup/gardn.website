@@ -20,3 +20,5 @@ CACHES = {
         },
     }
 }
+
+ALLOW_PLAYWRIGHT_LOGIN = True

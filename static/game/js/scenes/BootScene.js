@@ -11,6 +11,22 @@ export default class BootScene extends Phaser.Scene {
     this.load.image('tiles-lpc-farming', base + 'tilesets/lpc-farming.png');
     this.load.image('tiles-lpc-crops', base + 'tilesets/lpc-crops.png');
     this.load.image('tiles-post-apoc', base + 'tilesets/post-apoc-16.png');
+    this.load.spritesheet('tiles-lpc-base-sheet', base + 'tilesets/lpc-base.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    this.load.spritesheet('tiles-lpc-farming-sheet', base + 'tilesets/lpc-farming.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    this.load.spritesheet('tiles-lpc-crops-sheet', base + 'tilesets/lpc-crops.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    this.load.spritesheet('tiles-post-apoc-sheet', base + 'tilesets/post-apoc-16.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
 
     // Maps
     this.load.tilemapTiledJSON('map-overworld', base + 'maps/overworld.json');

@@ -14,7 +14,7 @@
       and let that activity bloom inside the garden.
     </p>
     <div class="game-shell-meta">
-      <span>Hotkeys: `R` scan, `N` note, `B` bookmark, `F` fullscreen</span>
+      <span>Hotkeys: `Tab` PADD, `R` scan, `N` note, `B` bookmark, `F` fullscreen</span>
       <span>Micropub helpers appear automatically when your site supports them.</span>
     </div>
   </div>
@@ -46,6 +46,14 @@
     harvestUrl: "{% url 'api_harvest_link' %}",
     plantUrl: "{% url 'api_plant_seed' %}",
     harvestsUrl: "{% url 'api_unplanted_harvests' %}",
+    profileUrl: "{% url 'api_update_profile' %}",
+    homesteadUrl: "{% url 'api_update_homestead' %}",
+    homesteadDecorUrl: "{% url 'api_update_garden_decoration' %}",
+    libraryUrl: "{% url 'api_library' %}",
+    grovePresenceUrl: "{% url 'api_grove_presence' %}",
+    grovePresenceHeartbeatUrl: "{% url 'api_grove_presence_heartbeat' %}",
+    groveMessagesUrl: "{% url 'api_grove_messages' %}",
+    grovePostMessageUrl: "{% url 'api_post_grove_message' %}",
     publishBookmarkUrl: "{% url 'api_publish_bookmark' %}",
     publishNoteUrl: "{% url 'api_publish_note' %}",
     tutorialUrl: "{% url 'api_advance_tutorial' %}",

@@ -1,36 +1,36 @@
 const TUTORIAL_STEPS = {
   0: null, // title screen — handled by TitleScene
   1: {
-    text: 'You made it. But you have no plot of land yet.\nSpeak with Elder Aldyn (north of here).',
+    text: 'You made it.\nSpeak with Elder Aldyn to get your bearings.',
     mastodonOnly: true,
   },
   2: {
-    text: 'You need a website — a plot of land on the web.\nCheck the panel above to claim one.',
+    text: 'You still need a place on the web to tend.\nUse this helper if you want a quick starting plot, or come back once your site is ready.',
     mastodonOnly: true,
     showNeocitiesModal: true,
   },
   3: {
-    text: 'Good. Your plot is registered.\nWalk north to reach your garden.',
+    text: 'Good. Your plot is registered.\nWalk north to reach your homestead.',
     mastodonOnly: true,
   },
   4: {
-    text: 'Your garden plot is just to the north.\nThe path is open.',
+    text: 'Your homestead waits just to the north.\nThe path is open.',
     mastodonOnly: true,
   },
   5: {
-    text: 'Welcome to your garden.\nPublish something on your site, then press R to scan for proof.',
+    text: 'Welcome home.\nPress Tab to tune your look if you want, then publish on your site and press R to scan for proof.',
   },
   6: {
-    text: 'A verified seed is ready.\nWalk up to an empty plot and plant it.',
+    text: 'A verified seed is ready.\nWalk up to an empty bed and plant it.',
   },
   7: {
-    text: 'Your first plant is rooted.\nKeep publishing to water the garden and grow it stronger.',
+    text: 'Your first plant is rooted.\nKeep publishing to feed the garden, and use the PADD to shape your homestead.',
   },
   8: {
-    text: "Neighbors help gardens thrive.\nAdd someone to your blogroll or Gardn roll, then scan again.",
+    text: "Neighbors help gardens thrive.\nLink to someone, rescan, and the grove will start to remember them.",
   },
   9: {
-    text: 'Tutorial complete.\nYour quest log is open. More awaits.',
+    text: 'Tutorial complete.\nThe road is open. Keep tending your site, your shelves, and your grove.',
     complete: true,
   },
 };

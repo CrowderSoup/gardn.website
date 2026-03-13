@@ -14,6 +14,8 @@ const runtimeState = window.__GARDN_RUNTIME_STATE || {
     status: '',
     fullscreen: false,
     hotkeysSuspended: false,
+    paddOpen: false,
+    paddTab: 'seeds',
   },
 };
 
@@ -105,6 +107,26 @@ function cloneServerState() {
 
 function urlForUser(template, username) {
   return template.replace('__USERNAME__', encodeURIComponent(username));
+}
+
+async function requestJson(url, { method = 'GET', body = null } = {}) {
+  const init = {
+    method,
+    credentials: 'same-origin',
+    headers: {},
+  };
+  if (body !== null) {
+    init.headers['Content-Type'] = 'application/json';
+    init.headers['X-CSRFToken'] = window.GAME_CONFIG.csrfToken;
+    init.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(url, init);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `Request failed (${response.status})`);
+  }
+  return payload;
 }
 
 export function getRuntimeState() {
@@ -207,6 +229,21 @@ export function setPlayerSnapshot(snapshot) {
 export function setUiState(patch) {
   runtimeState.ui = { ...runtimeState.ui, ...patch };
   emitChange();
+}
+
+export function openPadd(tab = runtimeState.ui.paddTab || 'seeds') {
+  setUiState({ paddOpen: true, paddTab: tab });
+}
+
+export function closePadd() {
+  setUiState({ paddOpen: false });
+}
+
+export function togglePadd(tab = null) {
+  setUiState({
+    paddOpen: !runtimeState.ui.paddOpen,
+    paddTab: tab || runtimeState.ui.paddTab || 'seeds',
+  });
 }
 
 export function updateGardenPlot(plotData) {
@@ -331,6 +368,93 @@ export async function toggleFullscreen(rootEl = document.getElementById('game-ro
   return false;
 }
 
+export async function updateProfileSettings(payload) {
+  const response = await requestJson(window.GAME_CONFIG.profileUrl, {
+    method: 'POST',
+    body: payload,
+  });
+  patchServerState((server) => {
+    server.appearance = response.appearance;
+    server.homestead = response.homestead;
+    server.library_summary = response.library_summary;
+    server.gate_state = response.homestead?.gate_state || server.gate_state;
+    if (server.player) {
+      server.player.appearance_configured = Boolean(response.appearance?.configured);
+    }
+  });
+  return response;
+}
+
+export async function updateHomesteadSettings(payload) {
+  const response = await requestJson(window.GAME_CONFIG.homesteadUrl, {
+    method: 'POST',
+    body: payload,
+  });
+  patchServerState((server) => {
+    server.homestead = response.homestead;
+    server.gate_state = response.gate_state || response.homestead?.gate_state || server.gate_state;
+    if (server.owner && response.homestead?.garden_name) {
+      server.owner.garden_name = response.homestead.garden_name;
+    }
+  });
+  return response;
+}
+
+export async function updateGardenDecoration(slotKey, decorKey, variantKey = '') {
+  const response = await requestJson(window.GAME_CONFIG.homesteadDecorUrl, {
+    method: 'POST',
+    body: {
+      slot_key: slotKey,
+      decor_key: decorKey,
+      variant_key: variantKey,
+    },
+  });
+  patchServerState((server) => {
+    server.homestead = response.homestead;
+  });
+  return response;
+}
+
+export async function fetchLibrary({ view = 'recent', q = '', page = 1 } = {}) {
+  const params = new URLSearchParams({
+    view,
+    page: String(page),
+  });
+  if (q) params.set('q', q);
+  return requestJson(`${window.GAME_CONFIG.libraryUrl}?${params.toString()}`);
+}
+
+export async function fetchGrovePresence() {
+  return requestJson(window.GAME_CONFIG.grovePresenceUrl);
+}
+
+export async function heartbeatGrovePresence(currentMap = runtimeState.currentMapId) {
+  return requestJson(window.GAME_CONFIG.grovePresenceHeartbeatUrl, {
+    method: 'POST',
+    body: { current_map: currentMap },
+  });
+}
+
+export async function fetchGroveMessages() {
+  return requestJson(window.GAME_CONFIG.groveMessagesUrl);
+}
+
+export async function postGroveMessage(content, currentMap = runtimeState.currentMapId) {
+  return requestJson(window.GAME_CONFIG.grovePostMessageUrl, {
+    method: 'POST',
+    body: { content, current_map: currentMap },
+  });
+}
+
+export async function completeQuest(questSlug) {
+  const response = await requestJson(window.GAME_CONFIG.questCompleteUrl, {
+    method: 'POST',
+    body: { quest_slug: questSlug },
+  });
+  await refreshServerState();
+  return response;
+}
+
 export function renderStateToText() {
   const server = runtimeState.server || {};
   const guestGarden = runtimeState.guestGarden || null;
@@ -348,10 +472,15 @@ export function renderStateToText() {
       tile_x: runtimeState.playerSnapshot.tileX,
       tile_y: runtimeState.playerSnapshot.tileY,
       facing: runtimeState.playerSnapshot.facing,
+      appearance_configured: server.player?.appearance_configured || false,
     },
     active_garden_owner: activeOwner,
     garden_health: activeHealth,
     site_status: server.site_status || null,
+    appearance: server.appearance || null,
+    homestead: server.homestead || null,
+    library_summary: server.library_summary || null,
+    grove: server.grove || null,
     capabilities: server.capabilities || {},
     verified_inventory: (server.verified_inventory || []).map((item) => ({
       id: item.id,
@@ -393,6 +522,10 @@ export function renderStateToText() {
       progress: quest.progress,
       target: quest.target,
     })),
+    ui: {
+      padd_open: Boolean(runtimeState.ui.paddOpen),
+      padd_tab: runtimeState.ui.paddTab,
+    },
   };
   return JSON.stringify(payload);
 }

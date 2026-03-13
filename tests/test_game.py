@@ -6,7 +6,19 @@ from unittest.mock import Mock, patch
 from django.test import TestCase
 from django.utils import timezone
 
-from game.models import GardenVisit, GameProfile, GardenPlot, NeighborLink, Quest, SiteScan, VerifiedActivity
+from game.models import (
+    GardenDecoration,
+    GardenVisit,
+    GameProfile,
+    GardenPlot,
+    GroveMessage,
+    GrovePresence,
+    NeighborLink,
+    Quest,
+    QuestProgress,
+    SiteScan,
+    VerifiedActivity,
+)
 from game.tasks import verify_published_activity
 from harvests.models import Harvest
 from picks.models import Pick
@@ -68,6 +80,54 @@ class GameStateAPITests(TestCase):
         session["access_token"] = "secret-token"
         session.save()
 
+    def _create_host_neighbor(self, *, gate_state: str = GameProfile.GATE_OPEN):
+        host = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+        host_profile = GameProfile.objects.create(
+            identity=host,
+            map_id="garden",
+            has_website=True,
+            gate_state=gate_state,
+        )
+        SiteScan.objects.create(
+            identity=host,
+            status=SiteScan.STATUS_VERIFIED,
+            scanned_url=host.me_url,
+            capabilities={"website_verified": True},
+        )
+        NeighborLink.objects.create(
+            identity=self.identity,
+            target_identity=host,
+            target_url=host.me_url,
+            relationship=NeighborLink.RELATIONSHIP_BLOGROLL,
+        )
+        return host, host_profile
+
+    def _add_verified_activities(self, count: int):
+        for index in range(count):
+            VerifiedActivity.objects.create(
+                identity=self.identity,
+                kind=VerifiedActivity.KIND_PUBLISHED_BOOKMARK,
+                status=VerifiedActivity.STATUS_VERIFIED,
+                canonical_url=f"https://target.example.com/{index}",
+                title=f"Link {index}",
+                verified_at=timezone.now(),
+            )
+
+    def _complete_quests(self, count: int):
+        quests = list(Quest.objects.order_by("order", "title")[:count])
+        for quest in quests:
+            QuestProgress.objects.create(
+                profile=self.profile,
+                quest=quest,
+                status="complete",
+                completed_at=timezone.now(),
+            )
+
     def test_game_state_response_shape(self):
         response = self.client.get("/game/api/state/")
         self.assertEqual(response.status_code, 200)
@@ -82,12 +142,21 @@ class GameStateAPITests(TestCase):
         self.assertIn("pending_inventory", data)
         self.assertIn("neighbors", data)
         self.assertIn("quests", data)
+        self.assertIn("appearance", data)
+        self.assertIn("homestead", data)
+        self.assertIn("library_summary", data)
+        self.assertIn("padd_badges", data)
+        self.assertIn("grove", data)
+        self.assertIn("gate_state", data)
 
         self.assertEqual(data["player"]["map_id"], "garden")
         self.assertEqual(data["owner"]["username"], "gardener")
         self.assertEqual(data["capabilities"]["micropub_endpoint"], "https://example.com/micropub")
         self.assertEqual(data["garden_health"]["label"], "steady")
         self.assertEqual(len(data["verified_inventory"]), 1)
+        self.assertEqual(data["appearance"]["body_style"], GameProfile.BODY_STYLE_ANDROGYNOUS)
+        self.assertEqual(data["homestead"]["gate_state"], GameProfile.GATE_OPEN)
+        self.assertEqual(data["library_summary"]["read_later_tag"], "read-later")
 
     def test_game_index_authenticated(self):
         response = self.client.get("/game/")
@@ -101,6 +170,24 @@ class GameStateAPITests(TestCase):
         response = self.client.get("/game/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Login to play")
+
+    def test_playwright_login_route_sets_session_and_profile(self):
+        self.client.session.flush()
+
+        response = self.client.get("/game/playwright-login/?username=smoke-check&map=neighbors")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/game/")
+
+        identity = UserIdentity.objects.get(username="smoke-check")
+        profile = GameProfile.objects.get(identity=identity)
+        session = self.client.session
+
+        self.assertEqual(session["identity_id"], identity.id)
+        self.assertTrue(session["website_verified"])
+        self.assertEqual(profile.map_id, "neighbors")
+        self.assertTrue(profile.appearance_configured)
+        self.assertTrue(profile.has_website)
 
     def test_site_status_endpoint_returns_scan(self):
         response = self.client.get("/game/api/site-status/")
@@ -137,6 +224,87 @@ class GameStateAPITests(TestCase):
         payload = json.loads(response.content)
         self.assertEqual(len(payload["verified_inventory"]), 1)
         self.assertEqual(len(payload["pending_inventory"]), 1)
+
+    def test_update_profile_persists_appearance_and_read_later_tag(self):
+        response = self.client.post(
+            "/game/api/profile/",
+            data=json.dumps(
+                {
+                    "body_style": GameProfile.BODY_STYLE_FEMININE,
+                    "skin_tone": "amber",
+                    "outfit_key": "starter",
+                    "read_later_tag": "queue",
+                    "appearance_configured": True,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        payload = json.loads(response.content)
+        self.assertTrue(self.profile.appearance_configured)
+        self.assertEqual(self.profile.body_style, GameProfile.BODY_STYLE_FEMININE)
+        self.assertEqual(self.profile.skin_tone, "amber")
+        self.assertEqual(self.profile.read_later_tag, "queue")
+        self.assertEqual(payload["appearance"]["skin_tone"], "amber")
+        self.assertEqual(payload["library_summary"]["read_later_tag"], "queue")
+
+    def test_update_homestead_updates_name_and_gate(self):
+        response = self.client.post(
+            "/game/api/homestead/",
+            data=json.dumps({"garden_name": "Signal Glen", "gate_state": GameProfile.GATE_CLOSED}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.garden_name, "Signal Glen")
+        self.assertEqual(self.profile.gate_state, GameProfile.GATE_CLOSED)
+
+    def test_update_homestead_rejects_locked_path_style(self):
+        response = self.client.post(
+            "/game/api/homestead/",
+            data=json.dumps({"path_style": "clover"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_update_garden_decoration_requires_unlocked_slot(self):
+        response = self.client.post(
+            "/game/api/homestead/decor/",
+            data=json.dumps({"slot_key": "signpost", "decor_key": "signpost"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+
+    def test_update_garden_decoration_succeeds_when_unlocked(self):
+        self._add_verified_activities(4)
+        self._complete_quests(2)
+
+        response = self.client.post(
+            "/game/api/homestead/decor/",
+            data=json.dumps({"slot_key": "signpost", "decor_key": "signpost"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            GardenDecoration.objects.filter(profile=self.profile, slot_key="signpost", decor_key="signpost").exists()
+        )
+
+    def test_library_endpoint_filters_read_later(self):
+        Harvest.objects.create(identity=self.identity, url="https://a.example/", title="Keep", tags="read-later, indie")
+        Harvest.objects.create(identity=self.identity, url="https://b.example/", title="Skip", tags="done")
+
+        response = self.client.get("/game/api/library/?view=read_later")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertEqual(payload["total_count"], 1)
+        self.assertEqual(payload["items"][0]["title"], "Keep")
 
     def test_plant_seed_requires_verified_activity_id(self):
         response = self.client.post(
@@ -314,19 +482,7 @@ class GameStateAPITests(TestCase):
         self.assertIn("rescan your site", json.loads(response.content)["error"])
 
     def test_guest_garden_endpoint_returns_host_garden(self):
-        host = UserIdentity.objects.create(
-            me_url="https://friend.example/",
-            username="friend",
-            display_name="Friend",
-            login_method="indieauth",
-        )
-        host_profile = GameProfile.objects.create(identity=host, map_id="garden", has_website=True)
-        SiteScan.objects.create(
-            identity=host,
-            status=SiteScan.STATUS_VERIFIED,
-            scanned_url=host.me_url,
-            capabilities={"website_verified": True},
-        )
+        host, host_profile = self._create_host_neighbor()
         host_activity = VerifiedActivity.objects.create(
             identity=host,
             kind=VerifiedActivity.KIND_PUBLISHED_ENTRY,
@@ -346,12 +502,6 @@ class GameStateAPITests(TestCase):
             plant_type="flower",
             growth_stage=2,
         )
-        NeighborLink.objects.create(
-            identity=self.identity,
-            target_identity=host,
-            target_url=host.me_url,
-            relationship=NeighborLink.RELATIONSHIP_BLOGROLL,
-        )
         response = self.client.get(f"/game/api/gardens/{host.username}/")
 
         self.assertEqual(response.status_code, 200)
@@ -360,27 +510,19 @@ class GameStateAPITests(TestCase):
         self.assertEqual(payload["garden_health"]["recent_verified_count"], 1)
         self.assertEqual(len(payload["garden"]), 1)
         self.assertTrue(payload["visit"]["allowed"])
+        self.assertEqual(payload["gate_state"], GameProfile.GATE_OPEN)
+        self.assertIn("homestead", payload)
+
+    def test_guest_garden_endpoint_rejects_closed_gate(self):
+        host, _host_profile = self._create_host_neighbor(gate_state=GameProfile.GATE_CLOSED)
+
+        response = self.client.get(f"/game/api/gardens/{host.username}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("closed", json.loads(response.content)["error"])
 
     def test_record_garden_visit_counts_once_per_day(self):
-        host = UserIdentity.objects.create(
-            me_url="https://friend.example/",
-            username="friend",
-            display_name="Friend",
-            login_method="indieauth",
-        )
-        GameProfile.objects.create(identity=host, map_id="garden", has_website=True)
-        SiteScan.objects.create(
-            identity=host,
-            status=SiteScan.STATUS_VERIFIED,
-            scanned_url=host.me_url,
-            capabilities={"website_verified": True},
-        )
-        NeighborLink.objects.create(
-            identity=self.identity,
-            target_identity=host,
-            target_url=host.me_url,
-            relationship=NeighborLink.RELATIONSHIP_BLOGROLL,
-        )
+        host, _host_profile = self._create_host_neighbor()
 
         first = self.client.post(
             f"/game/api/gardens/{host.username}/visit/",
@@ -399,6 +541,44 @@ class GameStateAPITests(TestCase):
         self.assertFalse(json.loads(second.content)["recorded"])
         self.assertEqual(GardenVisit.objects.filter(host=host, visitor=self.identity).count(), 1)
         self.assertEqual(json.loads(second.content)["garden_state"]["garden_health"]["recent_visitor_count"], 1)
+
+    def test_grove_presence_and_chat_endpoints(self):
+        heartbeat = self.client.post(
+            "/game/api/grove/presence/heartbeat/",
+            data=json.dumps({"current_map": "neighbors"}),
+            content_type="application/json",
+        )
+        post = self.client.post(
+            "/game/api/grove/messages/post/",
+            data=json.dumps({"current_map": "neighbors", "content": "Hello grove"}),
+            content_type="application/json",
+        )
+        listing = self.client.get("/game/api/grove/presence/")
+        messages = self.client.get("/game/api/grove/messages/")
+
+        self.assertEqual(heartbeat.status_code, 200)
+        self.assertEqual(post.status_code, 200)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(messages.status_code, 200)
+        self.assertTrue(GrovePresence.objects.filter(identity=self.identity, current_map="neighbors").exists())
+        self.assertTrue(GroveMessage.objects.filter(identity=self.identity, content="Hello grove").exists())
+        self.assertEqual(len(json.loads(messages.content)["messages"]), 1)
+
+    def test_grove_message_rate_limit(self):
+        GrovePresence.objects.create(identity=self.identity, current_map="neighbors")
+        first = self.client.post(
+            "/game/api/grove/messages/post/",
+            data=json.dumps({"current_map": "neighbors", "content": "First"}),
+            content_type="application/json",
+        )
+        second = self.client.post(
+            "/game/api/grove/messages/post/",
+            data=json.dumps({"current_map": "neighbors", "content": "Second"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
 
     @patch("game.evidence.requests.get")
     def test_scan_manual_page_counts_gardn_roll_widget_as_blogroll(self, get_mock):

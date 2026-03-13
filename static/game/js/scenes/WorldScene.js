@@ -19,7 +19,7 @@ const WORLD_DIMENSIONS = {
   neighbors: { width: 832, height: 704 },
 };
 const NEIGHBOR_GRASS_FRAMES = [1, 4, 7, 10, 13, 16];
-const NEIGHBOR_PATH_FRAMES = [190, 191, 192, 193, 194, 195, 196, 200];
+const PAVER_FRAMES = [190, 191, 192, 193, 194, 195, 196, 200];
 const MAP_THEMES = {
   overworld: {
     label: 'Crossroads',
@@ -251,12 +251,18 @@ export default class WorldScene extends Phaser.Scene {
       for (let row = 0; row < 8; row += 1) {
         this.add.rectangle(192, 84 + row * 32, 260, 22, 0x6b4b2d, 0.12).setDepth(-2);
       }
+      this._drawGardenAtmosphere(mapWidth, mapHeight);
     }
 
     if (this.currentMapId === 'ruins') {
       for (let col = 0; col < 6; col += 1) {
         this.add.rectangle(70 + col * 90, 120 + (col % 2) * 30, 36, 72, 0x48556d, 0.18).setDepth(-2);
       }
+      this._drawRuinsAtmosphere(mapWidth, mapHeight);
+    }
+
+    if (this.currentMapId === 'overworld') {
+      this._drawOverworldAtmosphere(mapWidth, mapHeight);
     }
 
     if (this.currentMapId === 'neighbors') {
@@ -313,12 +319,161 @@ export default class WorldScene extends Phaser.Scene {
     alpha = 1,
     originX = 0.5,
     originY = 0.5,
+    tint = null,
   } = {}) {
-    return this.add.image(x, y, texture, frame)
+    const image = this.add.image(x, y, texture, frame)
       .setDepth(depth)
       .setScale(scale)
       .setAlpha(alpha)
       .setOrigin(originX, originY);
+    if (tint) image.setTint(tint);
+    return image;
+  }
+
+  _stampPaverField(startX, startY, columns, rows, {
+    depth = -1.15,
+    alpha = 0.96,
+    tint = null,
+  } = {}) {
+    const placed = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < columns; col += 1) {
+        const frame = PAVER_FRAMES[(row + (col * 3)) % PAVER_FRAMES.length];
+        placed.push(this._addSceneProp(startX + (col * TILE_SIZE), startY + (row * TILE_SIZE), 'tiles-post-apoc-sheet', frame, {
+          depth,
+          scale: 2,
+          alpha,
+          tint,
+        }));
+      }
+    }
+    return placed;
+  }
+
+  _drawOverworldAtmosphere(mapWidth, mapHeight) {
+    const centerX = mapWidth / 2;
+    const centerY = mapHeight / 2;
+    this._stampPaverField(centerX - 64, centerY - 64, 5, 5, { alpha: 0.92 });
+    this._stampPaverField(centerX - 32, 32, 3, 7, { alpha: 0.9 });
+    this._stampPaverField(centerX + 64, centerY - 32, 7, 3, { alpha: 0.9 });
+    if ((this.gameState?.neighbors || []).length) {
+      this._stampPaverField(32, 96, 6, 3, { alpha: 0.88 });
+    }
+
+    [
+      { x: 112, y: 120, frame: 0 },
+      { x: 124, y: 188, frame: 12 },
+      { x: 136, y: 520, frame: 1 },
+      { x: 526, y: 112, frame: 3 },
+      { x: 512, y: 188, frame: 13 },
+      { x: 498, y: 516, frame: 2 },
+      { x: 286, y: 74, frame: 14 },
+      { x: 404, y: 76, frame: 15 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: -0.55,
+        alpha: 0.94,
+      });
+    });
+
+    [
+      { x: centerX - 112, y: centerY - 146 },
+      { x: centerX + 112, y: centerY - 146 },
+      { x: centerX - 176, y: centerY + 102 },
+      { x: centerX + 176, y: centerY + 102 },
+    ].forEach(({ x, y }) => {
+      this._addSceneProp(x, y, 'tiles-post-apoc-sheet', 200, {
+        depth: 0.45,
+        scale: 2,
+        alpha: 0.86,
+      });
+      this._addSceneProp(x, y - 24, 'tiles-post-apoc-sheet', 220, {
+        depth: 0.5,
+        scale: 2,
+        alpha: 0.84,
+      });
+    });
+  }
+
+  _drawRuinsAtmosphere(mapWidth, mapHeight) {
+    const centerX = mapWidth / 2;
+    this._stampPaverField(96, 288, 5, 3, { tint: 0xa3a8b4, alpha: 0.92 });
+    this._stampPaverField(224, 224, 7, 6, { tint: 0xa3a8b4, alpha: 0.92 });
+    this._stampPaverField(288, 128, 4, 3, { tint: 0xb6b0a1, alpha: 0.88 });
+
+    [
+      { x: 176, y: 184 },
+      { x: 464, y: 184 },
+      { x: 176, y: 448 },
+      { x: 464, y: 448 },
+    ].forEach(({ x, y }) => {
+      this._addSceneProp(x, y, 'tiles-post-apoc-sheet', 200, {
+        depth: 0.45,
+        scale: 2,
+        alpha: 0.88,
+      });
+      this._addSceneProp(x, y - 24, 'tiles-post-apoc-sheet', 220, {
+        depth: 0.5,
+        scale: 2,
+        alpha: 0.86,
+      });
+    });
+
+    [
+      { x: centerX - 80, y: 176, frame: 34 },
+      { x: centerX - 48, y: 176, frame: 35 },
+      { x: centerX - 16, y: 176, frame: 36 },
+      { x: centerX + 16, y: 176, frame: 37 },
+      { x: centerX + 48, y: 176, frame: 38 },
+      { x: centerX + 80, y: 176, frame: 39 },
+      { x: 260, y: 400, frame: 26 },
+      { x: 380, y: 400, frame: 27 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-farming-sheet', frame, {
+        depth: 0.7,
+        alpha: 0.9,
+      });
+    });
+
+    [
+      { x: 126, y: 146, frame: 17 },
+      { x: 516, y: 148, frame: 18 },
+      { x: 138, y: 514, frame: 16 },
+      { x: 504, y: 508, frame: 15 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: -0.45,
+        alpha: 0.9,
+      });
+    });
+  }
+
+  _drawGardenAtmosphere(_mapWidth, mapHeight) {
+    [
+      { x: 84, y: 72, frame: 0 },
+      { x: 428, y: 72, frame: 3 },
+      { x: 76, y: 360, frame: 12 },
+      { x: 436, y: 360, frame: 14 },
+      { x: 94, y: mapHeight - 92, frame: 1 },
+      { x: 420, y: mapHeight - 92, frame: 2 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: -0.55,
+        alpha: 0.94,
+      });
+    });
+
+    [
+      { x: 190, y: 382, frame: 294 },
+      { x: 320, y: 382, frame: 295 },
+      { x: 190, y: 420, frame: 342 },
+      { x: 320, y: 420, frame: 343 },
+    ].forEach(({ x, y, frame }) => {
+      this._addSceneProp(x, y, 'tiles-lpc-crops-sheet', frame, {
+        depth: 0.4,
+        alpha: 0.9,
+      });
+    });
   }
 
   _drawNeighborProps(mapWidth, mapHeight) {
@@ -326,23 +481,11 @@ export default class WorldScene extends Phaser.Scene {
     const plazaY = 276;
     const entryY = mapHeight - 146;
 
-    this._stampNeighborPathField(centerX - 64, entryY - 144, 5, 6);
-    this._stampNeighborPathField(centerX - 96, plazaY - 96, 7, 6);
+    this._stampPaverField(centerX - 64, entryY - 144, 5, 6);
+    this._stampPaverField(centerX - 96, plazaY - 96, 7, 6);
     this._drawNeighborGatePaths(mapWidth, mapHeight);
     this._drawNeighborGreenery(mapWidth, mapHeight);
     this._drawNeighborRuins(centerX, plazaY, mapHeight);
-  }
-
-  _stampNeighborPathField(startX, startY, columns, rows) {
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < columns; col += 1) {
-        const frame = NEIGHBOR_PATH_FRAMES[(row + (col * 3)) % NEIGHBOR_PATH_FRAMES.length];
-        this._addSceneProp(startX + (col * TILE_SIZE), startY + (row * TILE_SIZE), 'tiles-post-apoc-sheet', frame, {
-          depth: -1.15,
-          scale: 2,
-        });
-      }
-    }
   }
 
   _drawNeighborGatePaths(mapWidth, mapHeight) {
@@ -355,7 +498,7 @@ export default class WorldScene extends Phaser.Scene {
       const key = `${slot.anchorX}:${slot.anchorY}`;
       if (anchorKeys.has(key)) return;
       anchorKeys.add(key);
-      this._stampNeighborPathField(slot.anchorX - 16, slot.anchorY - 16, 2, 2);
+      this._stampPaverField(slot.anchorX - 16, slot.anchorY - 16, 2, 2);
     });
 
     [
@@ -374,7 +517,7 @@ export default class WorldScene extends Phaser.Scene {
       { x: centerX - 160, y: 430, columns: 2, rows: 2 },
       { x: centerX + 96, y: 430, columns: 2, rows: 2 },
     ].forEach(({ x, y, columns, rows }) => {
-      this._stampNeighborPathField(x, y, columns, rows);
+      this._stampPaverField(x, y, columns, rows);
     });
   }
 
@@ -1114,7 +1257,7 @@ export default class WorldScene extends Phaser.Scene {
     const owner = this._activeGardenOwner();
     const pathColor = {
       stone: 0xb59e87,
-      clover: 0x5a8148,
+      clover: 0x7b9563,
       sunbaked: 0xc69062,
     }[homestead.path_style] || 0xb59e87;
     const fenceColor = {
@@ -1132,7 +1275,20 @@ export default class WorldScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(4);
     this._plotElements.push(title);
 
-    const walkway = this.add.rectangle(offsetX + (gridWidth / 2), offsetY + gridHeight + 18, gridWidth + 58, 24, pathColor, 0.58).setDepth(0.8);
+    this._plotElements.push(
+      ...this._stampPaverField(offsetX + (gridWidth / 2) - 48, offsetY + gridHeight - 24, 3, 2, {
+        depth: 0.72,
+        alpha: 0.9,
+        tint: pathColor,
+      }),
+      ...this._stampPaverField(offsetX + (gridWidth / 2) - 32, offsetY + gridHeight + 8, 2, 4, {
+        depth: 0.72,
+        alpha: 0.92,
+        tint: pathColor,
+      }),
+    );
+
+    const walkway = this.add.rectangle(offsetX + (gridWidth / 2), offsetY + gridHeight + 18, gridWidth + 58, 24, pathColor, 0.26).setDepth(0.68);
     walkway.setStrokeStyle(1, 0xf4e0b5, 0.18);
     this._plotElements.push(walkway);
 
@@ -1146,6 +1302,18 @@ export default class WorldScene extends Phaser.Scene {
     fenceSegments.forEach((segment) => {
       segment.setDepth(1.1);
       this._plotElements.push(segment);
+    });
+
+    [
+      { x: offsetX - 20, y: offsetY - 14, frame: 0 },
+      { x: offsetX + gridWidth + 20, y: offsetY - 14, frame: 3 },
+      { x: offsetX - 24, y: offsetY + gridHeight + 30, frame: 12 },
+      { x: offsetX + gridWidth + 24, y: offsetY + gridHeight + 30, frame: 14 },
+    ].forEach(({ x, y, frame }) => {
+      this._plotElements.push(this._addSceneProp(x, y, 'tiles-lpc-base-sheet', frame, {
+        depth: 1.25,
+        alpha: 0.94,
+      }));
     });
   }
 

@@ -309,3 +309,23 @@ Original prompt: We're building a Gardn game (in the app `game` inside this repo
   - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
   - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
   - Authenticated Playwright smoke still settles into `current_map: "neighbors"` with no console-error artifact emitted.
+
+## 2026-03-13 Broader world art pass
+
+- Applied the same authored-scene treatment to the other major maps in `static/game/js/scenes/WorldScene.js`:
+  - Crossroads now has clearer civic paving, route legibility toward the main exits, and a few deliberate ruin markers / grass clusters so it reads more like a central hub.
+  - Link Library now has a more intentional ruined-archive floor plan with paver fields, framing ruins, and restrained wood details instead of mostly empty tilemap space.
+  - Homestead got softer environmental dressing plus rebuild-safe path tiles, so the area around the plot grid feels more tended and the path-style setting has more visible presence.
+- Refactored the paver stamping helper so it can be reused across maps and also participate in Homestead rebuilds after profile changes.
+- Validation:
+  - `node --check static/game/js/scenes/WorldScene.js`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py check --settings=gardn.test_settings`
+  - `UV_CACHE_DIR=/tmp/uv-cache DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
+  - Authenticated Playwright smoke with isolated users settled into:
+    - `current_map: "overworld"`
+    - `current_map: "ruins"`
+    - `current_map: "garden"`
+    - `current_map: "neighbors"`
+  - No console-error artifact was emitted for those smoke loads.
+- Remaining visual-validation caveat:
+  - Headless WebGL screenshots from the shared client are still black on this machine, so the reliable automated artifact remains `render_game_to_text` state plus console cleanliness.

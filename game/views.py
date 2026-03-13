@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
@@ -24,7 +25,8 @@ from .evidence import (
     serialize_activity,
     serialize_neighbor,
 )
-from .models import GameProfile, GardenPlot, NeighborLink, Quest, QuestProgress, SiteScan, VerifiedActivity
+from .models import GardenVisit, GameProfile, GardenPlot, NeighborLink, Quest, QuestProgress, SiteScan, VerifiedActivity
+from .tasks import verify_published_activity
 
 
 def _current_identity(request: HttpRequest) -> UserIdentity | None:
@@ -78,7 +80,76 @@ def _garden_plot_title_max_length() -> int:
     return model_max_length
 
 
-def _garden_payload(profile: GameProfile, recent_verified_count: int) -> list[dict[str, object]]:
+def _enqueue_published_activity_verification(activity: VerifiedActivity) -> None:
+    if activity.status != VerifiedActivity.STATUS_PENDING:
+        return
+    if not activity.source_url:
+        return
+    verify_published_activity.delay(activity.id)
+
+
+def _recent_verified_count(identity: UserIdentity) -> int:
+    return VerifiedActivity.objects.filter(
+        identity=identity,
+        kind__in=ENTRY_ACTIVITY_KINDS,
+        status=VerifiedActivity.STATUS_VERIFIED,
+        verified_at__gte=timezone.now() - timedelta(days=7),
+    ).count()
+
+
+def _recent_visitor_count(identity: UserIdentity) -> int:
+    return (
+        GardenVisit.objects.filter(host=identity, visited_on__gte=timezone.localdate() - timedelta(days=6))
+        .values("visitor_id")
+        .distinct()
+        .count()
+    )
+
+
+def _garden_health_payload(scan: SiteScan, recent_verified_count: int, recent_visitor_count: int) -> dict[str, object]:
+    site_score_map = {
+        SiteScan.STATUS_VERIFIED: 40,
+        SiteScan.STATUS_MISSING_BLOGROLL: 32,
+        SiteScan.STATUS_MISSING_MARKUP: 28,
+        SiteScan.STATUS_MISSING_FEED: 24,
+        SiteScan.STATUS_SCAN_FAILED: 10,
+        SiteScan.STATUS_NEVER: 8,
+    }
+    score = min(
+        100,
+        site_score_map.get(scan.status, 8)
+        + min(40, recent_verified_count * 10)
+        + min(20, recent_visitor_count * 5),
+    )
+    if score >= 80:
+        label = "thriving"
+    elif score >= 60:
+        label = "blooming"
+    elif score >= 35:
+        label = "steady"
+    else:
+        label = "fragile"
+    return {
+        "score": score,
+        "label": label,
+        "recent_verified_count": recent_verified_count,
+        "recent_visitor_count": recent_visitor_count,
+    }
+
+
+def _garden_share_url(identity: UserIdentity) -> str:
+    return reverse("shared_garden_index", args=[identity.username])
+
+
+def _garden_owner_payload(identity: UserIdentity) -> dict[str, object]:
+    return {
+        "username": identity.username,
+        "display_name": identity.display_name or identity.username,
+        "garden_url": _garden_share_url(identity),
+    }
+
+
+def _garden_payload(profile: GameProfile, recent_verified_count: int, recent_visitor_count: int = 0) -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for plot in profile.garden_plots.select_related("verified_activity").order_by("slot_y", "slot_x"):
         activity = plot.verified_activity
@@ -90,12 +161,42 @@ def _garden_payload(profile: GameProfile, recent_verified_count: int) -> list[di
                 "link_url": activity.canonical_url if activity and activity.canonical_url else plot.link_url,
                 "link_title": activity.title if activity and activity.title else plot.link_title,
                 "plant_type": plot.plant_type or plant_type_for_activity(activity, plot.link_url),
-                "growth_stage": calculate_growth_stage(plot, recent_verified_count),
+                "growth_stage": calculate_growth_stage(plot, recent_verified_count, recent_visitor_count),
                 "status": activity.status if activity else VerifiedActivity.STATUS_LEGACY,
                 "kind": activity.kind if activity else "",
             }
         )
     return payload
+
+
+def _can_visit_garden(viewer: UserIdentity, host: UserIdentity) -> bool:
+    if viewer.id == host.id:
+        return True
+    return NeighborLink.objects.filter(identity=viewer, target_identity=host).exists()
+
+
+def _guest_garden_state(viewer: UserIdentity, host: UserIdentity) -> dict[str, object]:
+    profile = _get_profile(host)
+    scan = get_or_create_site_scan(host)
+    recent_verified_count = _recent_verified_count(host)
+    recent_visitor_count = _recent_visitor_count(host)
+    already_visited_today = False
+    if viewer.id != host.id:
+        already_visited_today = GardenVisit.objects.filter(
+            host=host,
+            visitor=viewer,
+            visited_on=timezone.localdate(),
+        ).exists()
+    return {
+        "owner": _garden_owner_payload(host),
+        "site_status": _site_status_payload(scan),
+        "garden_health": _garden_health_payload(scan, recent_verified_count, recent_visitor_count),
+        "garden": _garden_payload(profile, recent_verified_count, recent_visitor_count),
+        "visit": {
+            "allowed": _can_visit_garden(viewer, host),
+            "already_visited_today": already_visited_today,
+        },
+    }
 
 
 def _quest_progress_payload(identity: UserIdentity, profile: GameProfile) -> list[dict[str, object]]:
@@ -156,21 +257,19 @@ def _game_state(identity: UserIdentity) -> dict[str, object]:
     profile = _get_profile(identity)
     scan = get_or_create_site_scan(identity)
     verified_inventory, pending_inventory = seed_inventory(identity)
-    recent_verified_count = VerifiedActivity.objects.filter(
-        identity=identity,
-        kind__in=ENTRY_ACTIVITY_KINDS,
-        status=VerifiedActivity.STATUS_VERIFIED,
-        verified_at__gte=timezone.now() - timedelta(days=7),
-    ).count()
+    recent_verified_count = _recent_verified_count(identity)
+    recent_visitor_count = _recent_visitor_count(identity)
     neighbors = list(
         NeighborLink.objects.filter(identity=identity)
         .select_related("target_identity")
         .order_by("relationship", "target_url")
     )
+    garden_health = _garden_health_payload(scan, recent_verified_count, recent_visitor_count)
 
     return {
         "player": {
             "display_name": profile.display_name or identity.display_name or identity.username,
+            "username": identity.username,
             "map_id": profile.map_id,
             "tile_x": profile.tile_x,
             "tile_y": profile.tile_y,
@@ -181,10 +280,13 @@ def _game_state(identity: UserIdentity) -> dict[str, object]:
             "pending_count": len(pending_inventory),
             "neighbor_count": len(neighbors),
             "recent_verified_count": recent_verified_count,
+            "recent_visitor_count": recent_visitor_count,
         },
+        "owner": _garden_owner_payload(identity),
         "capabilities": scan.capabilities,
         "site_status": _site_status_payload(scan),
-        "garden": _garden_payload(profile, recent_verified_count),
+        "garden_health": garden_health,
+        "garden": _garden_payload(profile, recent_verified_count, recent_visitor_count),
         "verified_inventory": [serialize_activity(activity) for activity in verified_inventory],
         "pending_inventory": [serialize_activity(activity) for activity in pending_inventory],
         "neighbors": [serialize_neighbor(link) for link in neighbors],
@@ -199,7 +301,41 @@ def game_index(request: HttpRequest) -> HttpResponse:
 
     profile = _get_profile(identity)
     get_or_create_site_scan(identity)
-    return render(request, "game/index.html", {"profile": profile})
+    return render(
+        request,
+        "game/index.html",
+        {
+            "profile": profile,
+            "share_garden_url": _garden_share_url(profile.identity),
+            "launch_map_id": "",
+            "launch_guest_username": "",
+        },
+    )
+
+
+def shared_garden_index(request: HttpRequest, username: str) -> HttpResponse:
+    host = get_object_or_404(UserIdentity, username=username)
+    identity = _current_identity(request)
+    if not identity:
+        return render(request, "game/login_prompt.html")
+
+    profile = _get_profile(identity)
+    get_or_create_site_scan(identity)
+    launch_map_id = ""
+    launch_guest_username = ""
+    if identity.id != host.id:
+        launch_map_id = "guest_garden"
+        launch_guest_username = host.username
+    return render(
+        request,
+        "game/index.html",
+        {
+            "profile": profile,
+            "share_garden_url": _garden_share_url(profile.identity),
+            "launch_map_id": launch_map_id,
+            "launch_guest_username": launch_guest_username,
+        },
+    )
 
 
 @require_GET
@@ -208,6 +344,52 @@ def api_game_state(request: HttpRequest) -> JsonResponse:
     if err:
         return err
     return JsonResponse(_game_state(identity))
+
+
+@require_GET
+def api_public_garden_state(request: HttpRequest, username: str) -> JsonResponse:
+    identity, err = _require_identity(request)
+    if err:
+        return err
+
+    host = get_object_or_404(UserIdentity, username=username)
+    if not _can_visit_garden(identity, host):
+        return JsonResponse(
+            {"error": "Pick this gardener and rescan your site before you can visit their garden."},
+            status=403,
+        )
+    return JsonResponse(_guest_garden_state(identity, host))
+
+
+@require_POST
+def api_record_garden_visit(request: HttpRequest, username: str) -> JsonResponse:
+    identity, err = _require_identity(request)
+    if err:
+        return err
+
+    host = get_object_or_404(UserIdentity, username=username)
+    if not _can_visit_garden(identity, host):
+        return JsonResponse(
+            {"error": "Pick this gardener and rescan your site before you can visit their garden."},
+            status=403,
+        )
+
+    recorded = False
+    if identity.id != host.id:
+        _visit, recorded = GardenVisit.objects.get_or_create(
+            host=host,
+            visitor=identity,
+            visited_on=timezone.localdate(),
+            defaults={"source": GardenVisit.SOURCE_NEIGHBOR_GROVE},
+        )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "recorded": recorded,
+            "garden_state": _guest_garden_state(identity, host),
+        }
+    )
 
 
 @require_POST
@@ -304,6 +486,7 @@ def api_publish_bookmark(request: HttpRequest) -> JsonResponse:
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
+    _enqueue_published_activity_verification(activity)
     return JsonResponse({"ok": True, "activity": serialize_activity(activity)})
 
 
@@ -330,6 +513,7 @@ def api_publish_note(request: HttpRequest) -> JsonResponse:
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
+    _enqueue_published_activity_verification(activity)
     return JsonResponse({"ok": True, "activity": serialize_activity(activity)})
 
 

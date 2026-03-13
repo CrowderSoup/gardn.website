@@ -69,7 +69,10 @@ export default class TitleScene extends Phaser.Scene {
   startGame() {
     this.cameras.main.fade(500, 0, 0, 0, false, (_cam, progress) => {
       if (progress === 1) {
-        this.scene.start('WorldScene');
+        const startData = {};
+        if (window.GAME_CONFIG.launchMapId) startData.mapId = window.GAME_CONFIG.launchMapId;
+        if (window.GAME_CONFIG.launchGuestUsername) startData.guestUsername = window.GAME_CONFIG.launchGuestUsername;
+        this.scene.start('WorldScene', startData);
         this.scene.launch('UIScene');
       }
     });

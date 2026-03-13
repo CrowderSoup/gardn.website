@@ -1,13 +1,50 @@
 import {
   getRuntimeState,
-  patchServerState,
   plantVerifiedActivity,
   publishBookmark,
   publishNote,
   replaceInventory,
   runSiteScan,
+  setUiState,
   updateGardenPlot,
 } from '../state.js';
+
+const ACTION_CELEBRATIONS = {
+  note: {
+    startToast: 'Publishing note to your site...',
+    successToast: 'Note published. Scan when your site updates to verify the seed.',
+    retryHint: 'Press N to try again.',
+    startBurst: {
+      label: 'Sending a new note seed...',
+      primaryColor: 0xf4ba77,
+      secondaryColor: 0xf5de92,
+      textColor: '#fff2d7',
+    },
+    successBurst: {
+      label: 'Note seed tucked away!',
+      primaryColor: 0xf5de92,
+      secondaryColor: 0x8fd4a1,
+      textColor: '#f4ffdc',
+    },
+  },
+  bookmark: {
+    startToast: 'Publishing bookmark to your site...',
+    successToast: 'Bookmark published. Scan your site when the permalink is live.',
+    retryHint: 'Press B to try again.',
+    startBurst: {
+      label: 'Trellising a fresh bookmark...',
+      primaryColor: 0x8dcde0,
+      secondaryColor: 0xf5de92,
+      textColor: '#ecfbff',
+    },
+    successBurst: {
+      label: 'Bookmark vine is climbing!',
+      primaryColor: 0xf5de92,
+      secondaryColor: 0x90d8b7,
+      textColor: '#f1ffe2',
+    },
+  },
+};
 
 export default class PlantScene extends Phaser.Scene {
   constructor() {
@@ -19,8 +56,10 @@ export default class PlantScene extends Phaser.Scene {
     this.slotX = data.slotX ?? 0;
     this.slotY = data.slotY ?? 0;
     this.onPlanted = data.onPlanted || null;
+    this.worldScene = data.worldScene || null;
     this._overlay = null;
     this._statusEl = null;
+    this._focusTarget = null;
   }
 
   create() {
@@ -36,6 +75,8 @@ export default class PlantScene extends Phaser.Scene {
 
     const box = document.createElement('div');
     box.className = 'gardn-modal';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
 
     const title = document.createElement('h2');
     title.textContent = this._modalTitle();
@@ -64,11 +105,15 @@ export default class PlantScene extends Phaser.Scene {
     overlay.appendChild(box);
     root.appendChild(overlay);
     this._overlay = overlay;
+    this._setHotkeysSuspended(true);
+
+    box.addEventListener('keydown', this._stopKeyPropagation);
 
     overlay.addEventListener('click', (event) => {
       if (event.target === overlay) this._cancel();
     });
     document.addEventListener('keydown', this._onKeyDown);
+    requestAnimationFrame(() => this._focusTarget?.focus?.());
   }
 
   _modalTitle() {
@@ -92,6 +137,7 @@ export default class PlantScene extends Phaser.Scene {
 
     this._selectEl = document.createElement('select');
     this._selectEl.className = 'gardn-modal-field';
+    this._focusTarget = this._selectEl;
     box.appendChild(this._selectEl);
 
     if (!verifiedInventory.length) {
@@ -126,7 +172,7 @@ export default class PlantScene extends Phaser.Scene {
 
     box.appendChild(this._actionRow([
       this._button('Cancel', 'btn-secondary', () => this._cancel()),
-      this._button('Scan now', 'btn-secondary', () => this._scanNow()),
+      this._button('Scan now', 'btn-secondary', () => this._submitScan()),
       this._button('Plant seed', 'btn', () => this._confirmPlant(), !verifiedInventory.length),
     ]));
   }
@@ -138,6 +184,7 @@ export default class PlantScene extends Phaser.Scene {
     this._contentInput = document.createElement('textarea');
     this._contentInput.rows = 5;
     this._contentInput.placeholder = 'Write a small note for your site...';
+    this._focusTarget = this._contentInput;
 
     box.appendChild(this._titleInput);
     box.appendChild(this._contentInput);
@@ -151,6 +198,7 @@ export default class PlantScene extends Phaser.Scene {
     this._targetUrlInput = document.createElement('input');
     this._targetUrlInput.type = 'url';
     this._targetUrlInput.placeholder = 'https://example.com/article';
+    this._focusTarget = this._targetUrlInput;
 
     this._bookmarkTitleInput = document.createElement('input');
     this._bookmarkTitleInput.placeholder = 'Optional title';
@@ -166,17 +214,23 @@ export default class PlantScene extends Phaser.Scene {
   _buildScanForm(box) {
     this._scanUrlInput = document.createElement('input');
     this._scanUrlInput.type = 'url';
-    this._scanUrlInput.placeholder = 'Optional blogroll/following page URL';
+    this._scanUrlInput.placeholder = 'Optional permalink, blogroll, or following page URL';
+    this._scanUrlInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      this._submitScan(this._scanUrlInput.value);
+    });
+    this._focusTarget = this._scanUrlInput;
     box.appendChild(this._scanUrlInput);
 
     const note = document.createElement('p');
     note.className = 'gardn-modal-note';
-    note.textContent = 'Leave this empty for a home-page scan, or provide a dedicated links page to look for neighbors.';
+    note.textContent = 'Leave this empty for a home-page scan, or provide a specific page to look for a post, bookmark, or neighbor links.';
     box.appendChild(note);
 
     box.appendChild(this._actionRow([
       this._button('Cancel', 'btn-secondary', () => this._cancel()),
-      this._button('Run scan', 'btn', () => this._scanNow(this._scanUrlInput.value)),
+      this._button('Run scan', 'btn', () => this._submitScan(this._scanUrlInput.value)),
     ]));
   }
 
@@ -223,6 +277,7 @@ export default class PlantScene extends Phaser.Scene {
       };
       updateGardenPlot(plotData);
       if (this.onPlanted) this.onPlanted(plotData);
+      this._worldScene()?.syncRuntimeState({ rebuildGarden: true });
       this._removeOverlay();
       this.scene.stop('PlantScene');
     } catch (error) {
@@ -237,14 +292,11 @@ export default class PlantScene extends Phaser.Scene {
       this._statusEl.textContent = 'Write a note first.';
       return;
     }
-    try {
+    await this._runJoyfulAction(ACTION_CELEBRATIONS.note, async () => {
       await publishNote(content, title);
-      this._statusEl.textContent = 'Published. Run a scan when your site updates to verify the seed.';
       const inventoryResponse = await this._refreshInventory();
       replaceInventory(inventoryResponse);
-    } catch (error) {
-      this._statusEl.textContent = error.message || 'Could not publish the note.';
-    }
+    });
   }
 
   async _confirmPublishBookmark() {
@@ -254,14 +306,11 @@ export default class PlantScene extends Phaser.Scene {
       this._statusEl.textContent = 'Enter a target URL first.';
       return;
     }
-    try {
+    await this._runJoyfulAction(ACTION_CELEBRATIONS.bookmark, async () => {
       await publishBookmark(targetUrl, title);
-      this._statusEl.textContent = 'Bookmark published. Scan your site when the permalink is live.';
       const inventoryResponse = await this._refreshInventory();
       replaceInventory(inventoryResponse);
-    } catch (error) {
-      this._statusEl.textContent = error.message || 'Could not publish the bookmark.';
-    }
+    });
   }
 
   async _refreshInventory() {
@@ -284,12 +333,61 @@ export default class PlantScene extends Phaser.Scene {
     }
   }
 
+  async _submitScan(pageUrl = '') {
+    const trimmedPageUrl = pageUrl?.trim?.() || '';
+    const worldScene = this._worldScene();
+    if (!worldScene) {
+      try {
+        await runSiteScan(trimmedPageUrl);
+        const inventoryResponse = await this._refreshInventory();
+        replaceInventory(inventoryResponse);
+        this._cancel();
+      } catch (error) {
+        this._statusEl.textContent = error.message || 'Scan failed.';
+      }
+      return;
+    }
+    this._cancel();
+    await worldScene.triggerScan(trimmedPageUrl, { allowWhileModalOpen: true });
+  }
+
+  async _runJoyfulAction(config, action) {
+    this._cancel();
+    this._worldScene()?.celebrateAction(config.startBurst);
+    this._worldScene()?.showToast(config.startToast);
+    try {
+      await action();
+      this._worldScene()?.syncRuntimeState();
+      this._worldScene()?.celebrateAction(config.successBurst);
+      this._worldScene()?.showToast(config.successToast);
+    } catch (error) {
+      const message = error.message || 'That action could not be completed.';
+      this._worldScene()?.showToast(`${message} ${config.retryHint}`.trim(), '#ffd4a8');
+    }
+  }
+
+  _worldScene() {
+    return this.worldScene || window.game?.scene?.keys?.WorldScene || this.scene.manager?.keys?.WorldScene || null;
+  }
+
+  _setHotkeysSuspended(suspended) {
+    setUiState({ hotkeysSuspended: suspended });
+    const worldKeyboard = this._worldScene()?.input?.keyboard;
+    if (worldKeyboard) worldKeyboard.enabled = !suspended;
+    if (suspended) {
+      this.input.keyboard?.disableGlobalCapture();
+      return;
+    }
+    this.input.keyboard?.enableGlobalCapture();
+  }
+
   _cancel() {
     this._removeOverlay();
     this.scene.stop('PlantScene');
   }
 
   _removeOverlay() {
+    this._setHotkeysSuspended(false);
     document.removeEventListener('keydown', this._onKeyDown);
     if (this._overlay) {
       this._overlay.remove();
@@ -306,5 +404,9 @@ export default class PlantScene extends Phaser.Scene {
       event.preventDefault();
       this._cancel();
     }
+  };
+
+  _stopKeyPropagation = (event) => {
+    if (event.key !== 'Escape') event.stopPropagation();
   };
 }

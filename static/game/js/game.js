@@ -6,7 +6,7 @@ import DialogScene from './scenes/DialogScene.js';
 import TutorialScene from './scenes/TutorialScene.js';
 import UIScene from './scenes/UIScene.js';
 import PlantScene from './scenes/PlantScene.js';
-import { installTestingHooks, setUiState, toggleFullscreen } from './state.js';
+import { areHotkeysSuspended, installTestingHooks, setUiState, toggleFullscreen } from './state.js';
 
 const config = {
   type: Phaser.AUTO,
@@ -31,8 +31,7 @@ installTestingHooks(window.game);
 setUiState({ mode: 'title' });
 
 window.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() === 'f') {
-    event.preventDefault();
-    toggleFullscreen();
-  }
+  if (event.repeat || event.key.toLowerCase() !== 'f' || areHotkeysSuspended(event)) return;
+  event.preventDefault();
+  toggleFullscreen();
 });

@@ -1,13 +1,17 @@
 import {
+  areHotkeysSuspended,
+  clearGuestGarden,
+  fetchGuestGarden,
   getRuntimeState,
+  recordGardenVisit,
   refreshServerState,
   runSiteScan,
   setCurrentMapId,
   setPlayerSnapshot,
   setUiState,
-  toggleFullscreen,
   updateGardenPlot,
 } from '../state.js';
+import { GAME_HUD_LAYOUT, getGameplayViewport } from '../layout.js';
 
 const TILE_SIZE = 32;
 const PLAYER_SPEED = 160;
@@ -25,6 +29,13 @@ const MAP_THEMES = {
     mist: 0xb4ddb1,
     glow: 0xf3d684,
     accent: 0x7aa95e,
+  },
+  guest_garden: {
+    label: 'Guest Garden',
+    background: '#314c2b',
+    mist: 0xc0e0ba,
+    glow: 0xf5df9f,
+    accent: 0x8ab46a,
   },
   ruins: {
     label: 'Link Library',
@@ -87,8 +98,11 @@ export default class WorldScene extends Phaser.Scene {
     this._initialMapId = data?.mapId || null;
     this.currentMapId = data?.mapId || 'overworld';
     this._spawnName = data?.spawnName || null;
+    this._guestUsername = data?.guestUsername || '';
+    this._queuedToast = '';
     this._transitioning = false;
     this._plotElements = [];
+    this._inventoryPromotedListener = null;
   }
 
   async create() {
@@ -104,6 +118,24 @@ export default class WorldScene extends Phaser.Scene {
       };
     }
 
+    if (this.currentMapId === 'guest_garden' && this._guestUsername) {
+      try {
+        await fetchGuestGarden(this._guestUsername);
+        const visitPayload = await recordGardenVisit(this._guestUsername);
+        this._queuedToast = visitPayload.recorded
+          ? 'Your visit added fresh pollination.'
+          : 'You have already visited this garden today.';
+      } catch (error) {
+        clearGuestGarden();
+        this._guestUsername = '';
+        this.currentMapId = this.gameState.player.map_id || 'overworld';
+        this._initialMapId = this.currentMapId;
+        this._queuedToast = error.message || 'That garden is out of reach right now.';
+      }
+    } else {
+      clearGuestGarden();
+    }
+
     this.currentMapId = this._spawnName
       ? this.currentMapId
       : (this._initialMapId || this.gameState.player.map_id || this.currentMapId || 'overworld');
@@ -112,14 +144,13 @@ export default class WorldScene extends Phaser.Scene {
     this._buildAtmosphere();
     this._buildPlayer();
     this._buildNPCs();
-    this._buildEchoNodes();
-    if (this.currentMapId === 'garden') this._buildGardenPlots();
+    if (this.currentMapId === 'garden' || this.currentMapId === 'guest_garden') this._buildGardenPlots();
     this._buildPortals();
     this._buildInput();
     this._buildCamera();
+    this._bindRuntimeListeners();
 
     if (this.player && this.npcs) this.physics.add.collider(this.player, this.npcs);
-    if (this.player && this.echoNodes) this.physics.add.overlap(this.player, this.echoNodes, this._touchEchoNode, null, this);
     if (this.player && this.portals) {
       this.physics.add.overlap(this.player, this.portals, (_player, portal) => {
         this._transitionTo(portal.targetMap, portal.targetSpawn);
@@ -132,7 +163,7 @@ export default class WorldScene extends Phaser.Scene {
       color: '#fff0a8',
     }).setOrigin(0.5, 1).setDepth(14).setVisible(false);
 
-    this._worldLabel = this.add.text(18, 46, MAP_THEMES[this.currentMapId]?.label || this.currentMapId, {
+    this._worldLabel = this.add.text(18, 10, this._worldLabelText(), {
       fontFamily: 'monospace',
       fontSize: '10px',
       color: '#eaf4d8',
@@ -152,6 +183,7 @@ export default class WorldScene extends Phaser.Scene {
       this.scene.launch('TutorialScene', { worldScene: this, gameState: this.gameState });
     }
     this._syncProgressHints();
+    if (this._queuedToast) this._showToast(this._queuedToast);
   }
 
   _buildMap() {
@@ -161,9 +193,10 @@ export default class WorldScene extends Phaser.Scene {
       'lpc-crops': 'tiles-lpc-crops',
       'post-apoc-16': 'tiles-post-apoc',
     };
+    const mapKey = this.currentMapId === 'guest_garden' ? 'map-garden' : `map-${this.currentMapId}`;
 
     try {
-      this.map = this.make.tilemap({ key: `map-${this.currentMapId}` });
+      this.map = this.make.tilemap({ key: mapKey });
       const tilesets = this.map.tilesets
         .map((tileset) => this.map.addTilesetImage(tileset.name, TILESET_TEXTURE[tileset.name] || 'tiles-lpc-base'))
         .filter(Boolean);
@@ -189,7 +222,7 @@ export default class WorldScene extends Phaser.Scene {
     this.add.rectangle(mapWidth * 0.5, mapHeight * 0.5, mapWidth, mapHeight, theme.mist, 0.06).setDepth(-4);
     this.add.circle(mapWidth * 0.82, mapHeight * 0.16, 92, theme.glow, 0.08).setDepth(-3);
 
-    if (this.currentMapId === 'garden') {
+    if (this.currentMapId === 'garden' || this.currentMapId === 'guest_garden') {
       for (let row = 0; row < 8; row += 1) {
         this.add.rectangle(192, 84 + row * 32, 260, 22, 0x6b4b2d, 0.12).setDepth(-2);
       }
@@ -277,69 +310,169 @@ export default class WorldScene extends Phaser.Scene {
 
   _buildNeighborNPCs() {
     const neighbors = this.gameState.neighbors || [];
-    const positions = [
-      { x: 128, y: 160 },
-      { x: 224, y: 128 },
-      { x: 320, y: 176 },
-      { x: 416, y: 132 },
-    ];
-    neighbors.slice(0, positions.length).forEach((neighbor, index) => {
-      const pos = positions[index];
-      const npc = this.npcs.create(pos.x, pos.y, 'npc-archivist', 130);
+    if (!neighbors.length) return;
+
+    const mapWidth = this.map ? this.map.widthInPixels : 512;
+    const columnCount = neighbors.length > 12 ? 5 : 4;
+    const spacingX = columnCount === 5 ? 84 : 96;
+    const spacingY = neighbors.length > 8 ? 64 : 76;
+    const startY = neighbors.length > 15 ? 112 : 136;
+
+    neighbors.forEach((neighbor, index) => {
+      const row = Math.floor(index / columnCount);
+      const column = index % columnCount;
+      const rowStartIndex = row * columnCount;
+      const itemsInRow = Math.min(columnCount, neighbors.length - rowStartIndex);
+      const rowWidth = (itemsInRow - 1) * spacingX;
+      const x = (mapWidth / 2) - (rowWidth / 2) + (column * spacingX);
+      const y = startY + (row * spacingY) + ((column % 2) * 8);
+      const canVisit = Boolean(neighbor.visitable && neighbor.username);
+      const displayName = neighbor.display_name || neighbor.username || neighbor.target_url || 'Neighbor';
+      const relationshipLabel = (neighbor.relationship || 'neighbor link').replace(/_/g, ' ');
+      const npc = this.npcs.create(x, y, 'npc-archivist', 130);
       npc.setDepth(5);
-      npc.body.setSize(20, 20);
+      npc.body.setSize(18, 18);
       npc.body.setOffset(22, 36);
+      npc.setAlpha(canVisit ? 1 : 0.68);
+      npc.setTint(canVisit ? 0xffffff : 0xb8c8c2);
       npc.npcId = `neighbor-${neighbor.username || index}`;
       npc.npcData = {
-        name: neighbor.display_name || neighbor.username || 'Neighbor',
-        dialog: [
-          `${neighbor.display_name || neighbor.username || 'This garden'} was discovered through your ${neighbor.relationship.replace('_', ' ')}.`,
-          neighbor.target_url,
-        ],
+        name: displayName,
+        dialog: canVisit
+          ? [
+            `${displayName} was discovered through your ${relationshipLabel}.`,
+            neighbor.target_url,
+            `Step closer and you can cross into ${displayName}'s garden.`,
+          ]
+          : [
+            `${displayName} is part of your ${relationshipLabel}.`,
+            neighbor.target_url,
+            'Their garden gate is not rooted in Gardn yet, so this is a remembered contact for now.',
+          ],
+        guestUsername: canVisit ? neighbor.username : '',
       };
-    });
-  }
 
-  _buildEchoNodes() {
-    this.echoNodes = this.physics.add.staticGroup();
-    if (!this.map) return;
-    const linksLayer = this.map.getObjectLayer('Links');
-    if (!linksLayer) return;
-
-    if (!this.textures.exists('echo-node')) {
-      const graphics = this.make.graphics({ add: false });
-      graphics.fillStyle(0xf2d17f, 1);
-      graphics.fillRoundedRect(0, 0, 16, 16, 4);
-      graphics.lineStyle(2, 0xfff0be, 0.9);
-      graphics.strokeRoundedRect(1, 1, 14, 14, 4);
-      graphics.generateTexture('echo-node', 16, 16);
-      graphics.destroy();
-    }
-
-    linksLayer.objects.forEach((obj) => {
-      const node = this.echoNodes.create(obj.x + 8, obj.y + 8, 'echo-node');
-      node.setDepth(4);
-      node._touched = false;
+      const marker = this.add.circle(x, y + 24, 10, canVisit ? 0x8bd7c2 : 0x6e7f79, canVisit ? 0.22 : 0.14)
+        .setDepth(4);
       this.tweens.add({
-        targets: node,
-        alpha: 0.45,
-        duration: 850,
+        targets: marker,
+        alpha: canVisit ? 0.38 : 0.22,
+        scale: canVisit ? 1.22 : 1.08,
+        duration: canVisit ? 760 : 980,
         yoyo: true,
         repeat: -1,
+        ease: 'Sine.InOut',
       });
     });
   }
 
-  _touchEchoNode(_player, node) {
-    if (node._touched) return;
-    node._touched = true;
-    const messages = {
-      overworld: 'Echoes only become seeds when your site confirms them.',
-      ruins: 'The library knows markup. h-entry URLs make the strongest roots.',
-      garden: 'A waiting plot has room for your next verified post.',
-      neighbors: 'Neighbor links become real when your blogroll or roll embed says so.',
+  _portalDirection(x, y, width, height) {
+    const mapWidth = this.map ? this.map.widthInPixels : 640;
+    const mapHeight = this.map ? this.map.heightInPixels : 480;
+    if (y <= TILE_SIZE / 2) return 'down';
+    if (y + height >= mapHeight - TILE_SIZE / 2) return 'up';
+    if (x <= TILE_SIZE / 2) return 'right';
+    if (x + width >= mapWidth - TILE_SIZE / 2) return 'left';
+    return height >= width ? 'up' : 'right';
+  }
+
+  _portalLabel(targetMap) {
+    if (targetMap === 'guest_garden') return 'Guest Garden';
+    return MAP_THEMES[targetMap]?.label || 'Unknown Path';
+  }
+
+  _createPortalChevron(x, y, direction, color) {
+    let points = [-6, -6, -6, 6, 6, 0];
+    if (direction === 'left') points = [6, -6, 6, 6, -6, 0];
+    if (direction === 'up') points = [-6, 6, 6, 6, 0, -6];
+    if (direction === 'down') points = [-6, -6, 6, -6, 0, 6];
+    return this.add.triangle(x, y, ...points, color, 0.92)
+      .setDepth(3)
+      .setBlendMode(Phaser.BlendModes.ADD);
+  }
+
+  _drawPortalVisual(x, y, width, height, targetMap, color) {
+    const centerX = x + (width / 2);
+    const centerY = y + (height / 2);
+    const direction = this._portalDirection(x, y, width, height);
+    const label = this._portalLabel(targetMap).toUpperCase();
+    const frame = this.add.rectangle(centerX, centerY, width + 14, height + 14, 0x08110e, 0.86)
+      .setDepth(2.2);
+    frame.setStrokeStyle(2, color, 0.95);
+
+    const aura = this.add.rectangle(centerX, centerY, width + 22, height + 22, color, 0.1)
+      .setDepth(1.9)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const surface = this.add.rectangle(
+      centerX,
+      centerY,
+      Math.max(14, width - 4),
+      Math.max(14, height - 4),
+      color,
+      0.28,
+    ).setDepth(2.4).setBlendMode(Phaser.BlendModes.ADD);
+    const core = this.add.rectangle(
+      centerX,
+      centerY,
+      Math.max(8, width - 18),
+      Math.max(8, height - 18),
+      0xfff4bf,
+      0.22,
+    ).setDepth(2.5).setBlendMode(Phaser.BlendModes.ADD);
+
+    this.tweens.add({
+      targets: [aura, surface],
+      alpha: { from: 0.16, to: 0.38 },
+      duration: 840,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
+    this.tweens.add({
+      targets: core,
+      alpha: { from: 0.12, to: 0.34 },
+      duration: 620,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Quad.InOut',
+    });
+
+    const directionOffsets = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 },
     };
-    this._showToast(messages[this.currentMapId] || 'Your site is the source of truth.');
+    const offset = directionOffsets[direction] || directionOffsets.right;
+    for (let index = 0; index < 3; index += 1) {
+      const spacing = (index - 1) * 10;
+      const chevron = this._createPortalChevron(
+        centerX - (offset.x * spacing),
+        centerY - (offset.y * spacing),
+        direction,
+        0xf9efb6,
+      );
+      this.tweens.add({
+        targets: chevron,
+        x: chevron.x + (offset.x * 10),
+        y: chevron.y + (offset.y * 10),
+        alpha: 0.18,
+        duration: 700,
+        delay: index * 120,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
+
+    const labelYOffset = direction === 'down' ? (height / 2) + 16 : -((height / 2) + 16);
+    this.add.text(centerX, centerY + labelYOffset, label, {
+      fontFamily: 'monospace',
+      fontSize: '8px',
+      color: '#f2ffe2',
+      backgroundColor: 'rgba(9, 20, 15, 0.8)',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5).setDepth(8);
   }
 
   _buildPortals() {
@@ -350,10 +483,11 @@ export default class WorldScene extends Phaser.Scene {
       zone.targetMap = targetMap;
       zone.targetSpawn = targetSpawn || 'player_start';
       this.portals.add(zone);
-      this.add.rectangle(x + width / 2, y + height / 2, width, height, color, 0.18).setDepth(2);
+      const portalColor = MAP_THEMES[targetMap]?.mist || MAP_THEMES[targetMap]?.glow || color;
+      this._drawPortalVisual(x, y, width, height, targetMap, portalColor);
     };
 
-    if (this.map) {
+    if (this.map && this.currentMapId !== 'guest_garden') {
       const portalLayer = this.map.getObjectLayer('Portals');
       portalLayer?.objects.forEach((obj) => {
         const targetMap = obj.properties?.find((prop) => prop.name === 'target_map')?.value;
@@ -364,14 +498,9 @@ export default class WorldScene extends Phaser.Scene {
 
     if (this.currentMapId === 'overworld' && (this.gameState.neighbors || []).length) {
       createPortal(0, 96, 32, 64, 'neighbors', 'player_start', 0x7be0c6);
-      this.add.text(18, 76, 'Neighbor Grove', {
-        fontFamily: 'monospace',
-        fontSize: '8px',
-        color: '#ddfff0',
-      }).setOrigin(0.5).setDepth(8);
     }
-    if (this.currentMapId === 'neighbors') {
-      createPortal(304, 448, 32, 32, 'overworld', 'player_start', 0x7be0c6);
+    if (this.currentMapId === 'guest_garden') {
+      createPortal(304, 448, 32, 32, 'neighbors', 'player_start', 0x7be0c6);
     }
   }
 
@@ -384,25 +513,64 @@ export default class WorldScene extends Phaser.Scene {
       right: Phaser.Input.Keyboard.KeyCodes.D,
     });
 
-    this.input.keyboard.on('keydown-SPACE', () => this._tryInteract());
-    this.input.keyboard.on('keydown-E', () => this._tryInteract());
-    this.input.keyboard.on('keydown-N', () => this._openActionModal('note'));
-    this.input.keyboard.on('keydown-B', () => this._openActionModal('bookmark'));
+    this.input.keyboard.on('keydown-SPACE', (event) => {
+      if (!this._canUseHotkey(event)) return;
+      event.preventDefault();
+      this._tryInteract();
+    });
+    this.input.keyboard.on('keydown-E', (event) => {
+      if (!this._canUseHotkey(event)) return;
+      this._tryInteract();
+    });
+    this.input.keyboard.on('keydown-N', (event) => {
+      if (!this._canUseHotkey(event)) return;
+      this._openActionModal('note');
+    });
+    this.input.keyboard.on('keydown-B', (event) => {
+      if (!this._canUseHotkey(event)) return;
+      this._openActionModal('bookmark');
+    });
     this.input.keyboard.on('keydown-R', (event) => {
+      if (!this._canUseHotkey(event)) return;
       if (event.shiftKey) {
         this._openActionModal('scan');
         return;
       }
       this._triggerScan();
     });
-    this.input.keyboard.on('keydown-F', () => toggleFullscreen());
   }
 
   _buildCamera() {
     const mapWidth = this.map ? this.map.widthInPixels : 640;
     const mapHeight = this.map ? this.map.heightInPixels : 480;
+    const layout = {
+      ...GAME_HUD_LAYOUT,
+      width: this.cameras.main.width,
+      height: this.cameras.main.height,
+    };
+    const viewport = getGameplayViewport(layout);
+    this.cameras.main.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
     this.cameras.main.startFollow(this.player, true, 0.09, 0.09);
+  }
+
+  _worldLabelText() {
+    if (this.currentMapId === 'guest_garden') {
+      const owner = this._activeGardenOwner();
+      const ownerName = owner?.display_name || owner?.username || 'Neighbor';
+      return `${ownerName}'s Garden`;
+    }
+    return MAP_THEMES[this.currentMapId]?.label || this.currentMapId;
+  }
+
+  _activeGardenOwner() {
+    return getRuntimeState().guestGarden?.owner || this.gameState?.owner || null;
+  }
+
+  _activeGardenPlotsData() {
+    return this.currentMapId === 'guest_garden'
+      ? (getRuntimeState().guestGarden?.garden || [])
+      : (this.gameState?.garden || []);
   }
 
   update() {
@@ -480,7 +648,7 @@ export default class WorldScene extends Phaser.Scene {
       return;
     }
 
-    if (this.currentMapId === 'garden' && this._gardenPlots) {
+    if ((this.currentMapId === 'garden' || this.currentMapId === 'guest_garden') && this._gardenPlots) {
       const nearbyEmpty = this._gardenPlots.find((plot) => {
         if (plot.planted) return false;
         return Phaser.Math.Distance.Between(
@@ -491,6 +659,10 @@ export default class WorldScene extends Phaser.Scene {
         ) < TILE_SIZE * 1.5;
       });
       if (nearbyEmpty) {
+        if (this.currentMapId === 'guest_garden') {
+          this._showToast('This is a guest garden. Visits help it bloom, but only the owner can plant here.');
+          return;
+        }
         this._openActionModal('plant', {
           slotX: nearbyEmpty.gx,
           slotY: nearbyEmpty.gy,
@@ -527,6 +699,7 @@ export default class WorldScene extends Phaser.Scene {
     const onClose = () => {
       if (target.npcId === 'elder_aldyn' && step === 1) this._advanceTutorialStep(2);
       if (target.npcId === 'wanderer' && step === 7 && (this.gameState.neighbors || []).length) this._advanceTutorialStep(8);
+      if (target.npcData?.guestUsername) this._visitNeighborGarden(target.npcData.guestUsername);
     };
     this.scene.launch('DialogScene', {
       npcName: target.npcData.name,
@@ -534,6 +707,11 @@ export default class WorldScene extends Phaser.Scene {
       worldScene: this,
       onClose,
     });
+  }
+
+  _visitNeighborGarden(username) {
+    if (!username) return;
+    this._transitionTo('guest_garden', 'player_start', { guestUsername: username });
   }
 
   _buildGardenPlots() {
@@ -548,7 +726,7 @@ export default class WorldScene extends Phaser.Scene {
         const rect = this.add.rectangle(wx + TILE_SIZE / 2, wy + TILE_SIZE / 2, TILE_SIZE - 2, TILE_SIZE - 2, 0x6a4628, 0.75);
         rect.setStrokeStyle(1, 0x51321a).setDepth(1);
         this._plotElements.push(rect);
-        const planted = this.gameState?.garden?.find((plot) => plot.slot_x === gx && plot.slot_y === gy);
+        const planted = this._activeGardenPlotsData().find((plot) => plot.slot_x === gx && plot.slot_y === gy);
         if (planted) this._drawPlant(wx, wy, planted);
         this._gardenPlots.push({ gx, gy, wx, wy, planted: Boolean(planted) });
       }
@@ -576,17 +754,167 @@ export default class WorldScene extends Phaser.Scene {
 
   _openActionModal(mode, data = {}) {
     if (this.scene.isActive('PlantScene')) return;
-    this.scene.launch('PlantScene', { mode, ...data });
+    this.scene.launch('PlantScene', { mode, worldScene: this, ...data });
   }
 
-  async _triggerScan(pageUrl = '') {
-    if (this.scene.isActive('PlantScene')) return;
+  _canUseHotkey(event) {
+    if (areHotkeysSuspended(event)) return false;
+    return !this.scene.isActive('DialogScene') && !this.scene.isActive('PlantScene');
+  }
+
+  _bindRuntimeListeners() {
+    if (this._inventoryPromotedListener) {
+      window.removeEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
+    }
+    this._inventoryPromotedListener = (event) => {
+      if (!this.scene.isActive('WorldScene')) return;
+      const promotedCount = event.detail?.promotedCount || 0;
+      if (!promotedCount) return;
+      this.syncRuntimeState({ rebuildGarden: this.currentMapId === 'garden' });
+      this.celebrateAction({
+        label: promotedCount === 1 ? 'A waiting seed took root!' : `${promotedCount} waiting seeds took root!`,
+        primaryColor: 0x93df95,
+        secondaryColor: 0xf3d684,
+        textColor: '#f5ffd9',
+      });
+      this._showToast(
+        promotedCount === 1
+          ? 'A pending verification bloomed into a seed.'
+          : `${promotedCount} pending verifications bloomed into seeds.`,
+      );
+    };
+    window.addEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
+  }
+
+  syncRuntimeState({ rebuildGarden = false } = {}) {
+    this.gameState = getRuntimeState().server || this.gameState;
+    this._syncProgressHints();
+    if (rebuildGarden && this.currentMapId === 'garden') this._buildGardenPlots();
+  }
+
+  showToast(message, fill = '#eff9d7') {
+    this._showToast(message, fill);
+  }
+
+  triggerScan(pageUrl = '', options = {}) {
+    return this._triggerScan(pageUrl, options);
+  }
+
+  celebrateAction({
+    label = '',
+    primaryColor = 0xf3d684,
+    secondaryColor = 0x9fd3a8,
+    textColor = '#fff7cf',
+  } = {}) {
+    const centerX = this.cameras.main.width / 2;
+    const centerY = this.cameras.main.height / 2 - 18;
+
+    const flash = this.add.rectangle(
+      centerX,
+      centerY,
+      this.cameras.main.width + 48,
+      this.cameras.main.height + 48,
+      secondaryColor,
+      0.14,
+    ).setDepth(21).setScrollFactor(0).setBlendMode(Phaser.BlendModes.ADD);
+
+    const halo = this.add.circle(centerX, centerY, 18, primaryColor, 0.24)
+      .setDepth(22)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    const core = this.add.circle(centerX, centerY, 6, 0xffffff, 0.92)
+      .setDepth(23)
+      .setScrollFactor(0)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 480,
+      ease: 'Sine.Out',
+      onComplete: () => flash.destroy(),
+    });
+
+    this.tweens.add({
+      targets: halo,
+      scale: 4.8,
+      alpha: 0,
+      duration: 760,
+      ease: 'Cubic.Out',
+      onComplete: () => halo.destroy(),
+    });
+
+    this.tweens.add({
+      targets: core,
+      scale: 0.3,
+      alpha: 0,
+      duration: 420,
+      ease: 'Quad.In',
+      onComplete: () => core.destroy(),
+    });
+
+    for (let index = 0; index < 12; index += 1) {
+      const angle = Phaser.Math.DegToRad((360 / 12) * index + Phaser.Math.Between(-10, 10));
+      const distance = Phaser.Math.Between(48, 116);
+      const sparkle = this.add.circle(
+        centerX,
+        centerY,
+        Phaser.Math.Between(3, 6),
+        index % 2 === 0 ? primaryColor : secondaryColor,
+        0.95,
+      ).setDepth(23).setScrollFactor(0).setBlendMode(Phaser.BlendModes.ADD);
+
+      this.tweens.add({
+        targets: sparkle,
+        x: centerX + Math.cos(angle) * distance,
+        y: centerY + Math.sin(angle) * distance - Phaser.Math.Between(10, 32),
+        alpha: 0,
+        scale: Phaser.Math.FloatBetween(0.4, 1.6),
+        duration: Phaser.Math.Between(620, 920),
+        ease: 'Cubic.Out',
+        onComplete: () => sparkle.destroy(),
+      });
+    }
+
+    if (!label) return;
+    const banner = this.add.text(centerX, centerY - 58, label, {
+      fontFamily: 'monospace',
+      fontSize: '12px',
+      color: textColor,
+      stroke: '#102018',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(24).setScrollFactor(0);
+
+    this.tweens.add({
+      targets: banner,
+      y: centerY - 88,
+      alpha: 0,
+      duration: 1300,
+      ease: 'Sine.Out',
+      onComplete: () => banner.destroy(),
+    });
+  }
+
+  async _triggerScan(pageUrl = '', options = {}) {
+    const { allowWhileModalOpen = false } = options;
+    if (!allowWhileModalOpen && this.scene.isActive('PlantScene')) return;
+    this.celebrateAction({
+      label: 'Listening for fresh proof...',
+      primaryColor: 0x8bd7c2,
+      secondaryColor: 0xf3d684,
+      textColor: '#eefee4',
+    });
     this._showToast('Scanning your site...');
     try {
       await runSiteScan(pageUrl);
-      this.gameState = getRuntimeState().server || this.gameState;
-      this._syncProgressHints();
-      if (this.currentMapId === 'garden') this._buildGardenPlots();
+      this.syncRuntimeState({ rebuildGarden: true });
+      this.celebrateAction({
+        label: 'Fresh proof bloomed!',
+        primaryColor: 0xf3d684,
+        secondaryColor: 0x8bd7c2,
+        textColor: '#fffad1',
+      });
       this._showToast('Scan complete. Fresh proof is ready.');
     } catch (error) {
       this._showToast(error.message || 'Scan failed.', '#ffd4a8');
@@ -601,7 +929,7 @@ export default class WorldScene extends Phaser.Scene {
     if (step === 7 && neighbors > 0) this._advanceTutorialStep(8);
   }
 
-  _transitionTo(mapId, spawnName) {
+  _transitionTo(mapId, spawnName, extraData = {}) {
     if (this._transitioning) return;
     this._transitioning = true;
     const step = this.gameState?.player?.tutorial_step || 0;
@@ -611,9 +939,10 @@ export default class WorldScene extends Phaser.Scene {
     if (mapId === 'neighbors' && step === 7 && (this.gameState?.neighbors || []).length) {
       this._advanceTutorialStep(8);
     }
+    if (mapId !== 'guest_garden') clearGuestGarden();
     setCurrentMapId(mapId);
     this.savePosition();
-    this.scene.restart({ mapId, spawnName: spawnName || 'player_start' });
+    this.scene.restart({ mapId, spawnName: spawnName || 'player_start', ...extraData });
   }
 
   _advanceTutorialStep(step) {
@@ -634,7 +963,7 @@ export default class WorldScene extends Phaser.Scene {
   }
 
   savePosition() {
-    if (!this.player) return;
+    if (!this.player || this.currentMapId === 'guest_garden') return;
     fetch(window.GAME_CONFIG.saveUrl, {
       method: 'POST',
       credentials: 'same-origin',
@@ -652,6 +981,10 @@ export default class WorldScene extends Phaser.Scene {
 
   shutdown() {
     this.savePosition();
+    if (this._inventoryPromotedListener) {
+      window.removeEventListener('gardn:inventory-promoted', this._inventoryPromotedListener);
+      this._inventoryPromotedListener = null;
+    }
   }
 
   _showToast(message, fill = '#eff9d7') {

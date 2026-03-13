@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import mf2py
 import requests
@@ -36,6 +36,7 @@ class _SiteHTMLParser(HTMLParser):
         self.link_rels: list[tuple[str, str]] = []
         self.anchor_hrefs: list[str] = []
         self.iframe_srcs: list[str] = []
+        self.script_srcs: list[str] = []
         self.roll_usernames: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -57,9 +58,113 @@ class _SiteHTMLParser(HTMLParser):
             if src:
                 self.iframe_srcs.append(src)
             return
+        if tag == "script":
+            src = attr_map.get("src", "").strip()
+            if src:
+                self.script_srcs.append(src)
+            return
         username = attr_map.get("data-gardn-roll", "").strip()
         if username:
             self.roll_usernames.append(username)
+
+
+def _gardn_embed_from_iframe(src: str, page_url: str) -> tuple[str, str]:
+    resolved = _canonical_url(src, page_url)
+    if not resolved:
+        return "", ""
+    parsed = urlparse(resolved)
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 3 or parts[0] != "embed":
+        return "", ""
+    return parts[2], parts[1]
+
+
+def _page_roll_embed_usernames(page_url: str, parser: _SiteHTMLParser) -> set[str]:
+    usernames = {username for username in parser.roll_usernames if username}
+    for src in parser.iframe_srcs:
+        embed_kind, username = _gardn_embed_from_iframe(src, page_url)
+        if embed_kind == "roll" and username:
+            usernames.add(username)
+    return usernames
+
+
+def _origin_for_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _identity_for_target_url(variants: dict[str, UserIdentity], target_url: str) -> UserIdentity | None:
+    resolved = _canonical_url(target_url)
+    if not resolved:
+        return None
+    direct = variants.get(resolved)
+    if direct:
+        return direct
+    for variant in _url_variants(resolved):
+        target = variants.get(variant)
+        if target:
+            return target
+    return None
+
+
+def _gardn_api_base_candidates(page_url: str, parser: _SiteHTMLParser) -> list[str]:
+    bases: set[str] = set()
+
+    for src in parser.iframe_srcs:
+        resolved = _canonical_url(src, page_url)
+        if not resolved:
+            continue
+        parsed = urlparse(resolved)
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 3 and parts[0] == "embed":
+            origin = _origin_for_url(resolved)
+            if origin:
+                bases.add(origin)
+
+    for src in parser.script_srcs:
+        resolved = _canonical_url(src, page_url)
+        if not resolved:
+            continue
+        parsed = urlparse(resolved)
+        if parsed.path.rstrip("/").endswith("/gardn.js"):
+            origin = _origin_for_url(resolved)
+            if origin:
+                bases.add(origin)
+
+    if not bases:
+        bases.add(settings.PUBLIC_BASE_URL.rstrip("/"))
+
+    return sorted(bases)
+
+
+def _fetch_gardn_roll_rows(api_base: str, username: str, *, me_url: str, page_url: str) -> list[dict]:
+    origin = _origin_for_url(me_url)
+    if not origin:
+        return []
+
+    endpoint = f"{api_base.rstrip('/')}/api/{quote(username)}/roll.json"
+    try:
+        response = requests.get(
+            endpoint,
+            timeout=12,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": USER_AGENT,
+                "Origin": origin,
+                "Referer": page_url,
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return []
+
+    rows = payload.get("roll") if isinstance(payload, dict) else []
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
 
 
 def _parse_link_header(link_header: str) -> dict[str, str]:
@@ -193,6 +298,14 @@ def _fetch_document(url: str) -> tuple[requests.Response, str, _SiteHTMLParser]:
     parser = _SiteHTMLParser()
     parser.feed(html)
     return response, html, parser
+
+
+def _extract_entries_from_html(html: str, page_url: str) -> tuple[list[dict], bool, bool, bool]:
+    try:
+        document = mf2py.parse(doc=html, url=page_url)
+    except Exception:
+        document = {"items": []}
+    return _extract_entries(document, page_url)
 
 
 def _discover_capabilities(me_url: str, parser: _SiteHTMLParser, response: requests.Response) -> dict[str, object]:
@@ -450,6 +563,7 @@ def serialize_neighbor(link: NeighborLink) -> dict[str, object]:
         "source_url": link.source_url,
         "username": target.username if target else "",
         "display_name": (target.display_name if target else "") or (target.username if target else link.target_url),
+        "visitable": bool(target),
         "verified_at": link.verified_at.isoformat() if link.verified_at else None,
     }
 
@@ -483,14 +597,29 @@ def _collect_blogroll_links(
     home_html: str,
     home_parser: _SiteHTMLParser,
     manual_page_url: str = "",
-) -> list[dict]:
-    variants = _identity_variant_map(owner)
-    discovered: list[dict] = []
+    prefetched_pages: dict[str, tuple[str, _SiteHTMLParser]] | None = None,
+) -> tuple[list[dict], bool]:
     pages: dict[str, tuple[str, _SiteHTMLParser]] = {
         me_url: (home_html, home_parser),
     }
+    if prefetched_pages:
+        pages.update(prefetched_pages)
+
+    variants = _identity_variant_map(owner)
+    discovered: list[dict] = []
 
     candidate_pages = {me_url}
+    owner_origin = _origin_for_url(me_url)
+    existing_source_pages = (
+        NeighborLink.objects.filter(identity=owner)
+        .exclude(source_url="")
+        .values_list("source_url", flat=True)
+    )
+    for source_url in existing_source_pages:
+        resolved_source = _canonical_url(source_url, me_url)
+        if not resolved_source or _origin_for_url(resolved_source) != owner_origin:
+            continue
+        candidate_pages.add(resolved_source)
     for href in home_parser.anchor_hrefs:
         lowered = href.lower()
         if any(keyword in lowered for keyword in BLOGROLL_KEYWORDS):
@@ -531,32 +660,51 @@ def _collect_blogroll_links(
                 }
             )
 
-    roll_usernames = set(home_parser.roll_usernames)
-    for src in home_parser.iframe_srcs:
-        if "/embed/" in src and "/roll/" in src:
-            resolved = _canonical_url(src, me_url)
-            if resolved:
-                parsed = urlparse(resolved)
-                parts = [part for part in parsed.path.split("/") if part]
-                if len(parts) >= 3 and parts[0] == "embed" and parts[2] == "roll":
-                    roll_usernames.add(parts[1])
+    roll_embed_pages: set[str] = set()
+    for page_url, (_html, parser) in pages.items():
+        if owner.username and owner.username in _page_roll_embed_usernames(page_url, parser):
+            roll_embed_pages.add(page_url)
+            for api_base in _gardn_api_base_candidates(page_url, parser):
+                for row in _fetch_gardn_roll_rows(api_base, owner.username, me_url=me_url, page_url=page_url):
+                    target_url = _canonical_url(_safe_text(row.get("me_url") or row.get("profile_url")))
+                    if not target_url:
+                        continue
+                    discovered.append(
+                        {
+                            "relationship": NeighborLink.RELATIONSHIP_GARDN_ROLL,
+                            "source_url": page_url,
+                            "target_identity": _identity_for_target_url(variants, target_url),
+                            "target_url": target_url,
+                            "metadata": {
+                                "discovered_from": "gardn_roll_api",
+                                "embed_page": page_url,
+                                "api_base": api_base,
+                                "target_username": _safe_text(row.get("username")),
+                            },
+                        }
+                    )
 
-    if owner.username in roll_usernames:
-        for pick in Pick.objects.filter(picker=owner).select_related("picked"):
-            discovered.append(
-                {
-                    "relationship": NeighborLink.RELATIONSHIP_GARDN_ROLL,
-                    "source_url": me_url,
-                    "target_identity": pick.picked,
-                    "target_url": pick.picked.me_url,
-                    "metadata": {"discovered_from": "gardn_roll_embed"},
-                }
-            )
+    if roll_embed_pages:
+        picks = list(Pick.objects.filter(picker=owner).select_related("picked"))
+        for page_url in sorted(roll_embed_pages):
+            for pick in picks:
+                discovered.append(
+                    {
+                        "relationship": NeighborLink.RELATIONSHIP_GARDN_ROLL,
+                        "source_url": page_url,
+                        "target_identity": pick.picked,
+                        "target_url": pick.picked.me_url,
+                        "metadata": {
+                            "discovered_from": "gardn_roll_embed",
+                            "embed_page": page_url,
+                        },
+                    }
+                )
 
     deduped: dict[tuple[str, str], dict] = {}
     for link in discovered:
         deduped[(link["target_url"], link["relationship"])] = link
-    return list(deduped.values())
+    return list(deduped.values()), bool(roll_embed_pages)
 
 
 def _sync_neighbor_links(identity: UserIdentity, links: list[dict]) -> list[NeighborLink]:
@@ -637,16 +785,33 @@ def run_site_scan(identity: UserIdentity, manual_page_url: str = "") -> SiteScan
         )
         return scan
 
-    try:
-        document = mf2py.parse(doc=html, url=identity.me_url)
-    except Exception:
-        document = {"items": []}
-
-    entries, has_h_feed, has_h_entry, had_entry_without_url = _extract_entries(document, identity.me_url)
+    entries, has_h_feed, has_h_entry, had_entry_without_url = _extract_entries_from_html(html, identity.me_url)
     capabilities = _discover_capabilities(identity.me_url, parser, response)
     capabilities["website_verified"] = identity.website_verified
     capabilities["has_h_feed"] = has_h_feed
     capabilities["has_h_entry"] = has_h_entry
+    prefetched_pages: dict[str, tuple[str, _SiteHTMLParser]] = {}
+    manual_page_has_entries = False
+    resolved_manual_page_url = _canonical_url(manual_page_url, identity.me_url) if manual_page_url else ""
+
+    if resolved_manual_page_url and resolved_manual_page_url != identity.me_url:
+        try:
+            _manual_response, manual_html, manual_parser = _fetch_document(resolved_manual_page_url)
+        except Exception:
+            manual_html = ""
+        else:
+            prefetched_pages[resolved_manual_page_url] = (manual_html, manual_parser)
+            manual_entries, manual_has_h_feed, manual_has_h_entry, manual_had_entry_without_url = _extract_entries_from_html(
+                manual_html,
+                resolved_manual_page_url,
+            )
+            entries.extend(manual_entries)
+            manual_page_has_entries = manual_has_h_feed or manual_has_h_entry
+            has_h_feed = has_h_feed or manual_has_h_feed
+            has_h_entry = has_h_entry or manual_has_h_entry
+            had_entry_without_url = had_entry_without_url or manual_had_entry_without_url
+            capabilities["has_h_feed"] = has_h_feed
+            capabilities["has_h_entry"] = has_h_entry
 
     upsert_verified_activity(
         identity,
@@ -667,13 +832,15 @@ def run_site_scan(identity: UserIdentity, manual_page_url: str = "") -> SiteScan
             metadata=entry["metadata"],
         )
 
-    blogroll_links = _collect_blogroll_links(
+    blogroll_links, has_roll_embed = _collect_blogroll_links(
         identity,
         me_url=identity.me_url,
         home_html=html,
         home_parser=parser,
         manual_page_url=manual_page_url,
+        prefetched_pages=prefetched_pages,
     )
+    capabilities["roll_embed"] = bool(capabilities["roll_embed"] or has_roll_embed)
     neighbors = _sync_neighbor_links(identity, blogroll_links)
 
     issues: list[str] = []
@@ -681,7 +848,7 @@ def run_site_scan(identity: UserIdentity, manual_page_url: str = "") -> SiteScan
         issues.append("missing_markup")
     if not has_h_entry and not has_h_feed:
         issues.append("missing_feed")
-    if manual_page_url and not neighbors:
+    if manual_page_url and not neighbors and not manual_page_has_entries:
         issues.append("missing_blogroll")
 
     if "missing_blogroll" in issues and not has_h_entry and not has_h_feed:
@@ -738,13 +905,15 @@ def seed_inventory(identity: UserIdentity) -> tuple[list[VerifiedActivity], list
     return verified, pending
 
 
-def calculate_growth_stage(plot, recent_verified_count: int = 0) -> int:
-    planted_at = plot.planted_at or plot.updated_at
+def calculate_growth_stage(plot, recent_verified_count: int = 0, recent_visitor_count: int = 0) -> int:
+    planted_at = plot.planted_at or getattr(plot, "last_watered", None) or getattr(plot, "updated_at", None)
     if not planted_at:
         return 0
     age_days = max(0, (timezone.now() - planted_at).days)
     stage = min(4, age_days // 2 + 1)
     if recent_verified_count:
+        stage = min(4, stage + 1)
+    if recent_visitor_count:
         stage = min(4, stage + 1)
     return stage
 

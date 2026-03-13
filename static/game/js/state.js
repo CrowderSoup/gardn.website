@@ -1,5 +1,6 @@
 const runtimeState = window.__GARDN_RUNTIME_STATE || {
   server: null,
+  guestGarden: null,
   currentMapId: 'overworld',
   playerSnapshot: {
     x: 0,
@@ -12,44 +13,182 @@ const runtimeState = window.__GARDN_RUNTIME_STATE || {
     mode: 'boot',
     status: '',
     fullscreen: false,
+    hotkeysSuspended: false,
   },
 };
 
 window.__GARDN_RUNTIME_STATE = runtimeState;
+const EDITABLE_TARGET_SELECTOR = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
+const PENDING_VERIFICATION_POLL_MS = 5000;
+let pendingVerificationTimer = 0;
+let pendingVerificationRequest = null;
 
 function emitChange() {
   window.dispatchEvent(new CustomEvent('gardn:state-change', { detail: getRuntimeState() }));
+}
+
+function inventoryCounts(serverState) {
+  return {
+    verified: serverState?.verified_inventory?.length || 0,
+    pending: serverState?.pending_inventory?.length ?? serverState?.player?.pending_count ?? 0,
+  };
+}
+
+function emitInventoryPromotion(previousState, nextState) {
+  if (!previousState || !nextState) return;
+  const before = inventoryCounts(previousState);
+  const after = inventoryCounts(nextState);
+  if (after.pending >= before.pending) return;
+
+  const promotedCount = Math.max(0, after.verified - before.verified);
+  if (!promotedCount) return;
+
+  window.dispatchEvent(new CustomEvent('gardn:inventory-promoted', {
+    detail: {
+      promotedCount,
+      previous: before,
+      current: after,
+    },
+  }));
+}
+
+function toElement(target) {
+  if (!target) return null;
+  if (target instanceof Element) return target;
+  return target.parentElement || null;
+}
+
+function pendingVerificationCount(serverState = runtimeState.server) {
+  const inventoryPending = serverState?.pending_inventory?.length;
+  if (typeof inventoryPending === 'number') return inventoryPending;
+  return serverState?.player?.pending_count || 0;
+}
+
+function clearPendingVerificationPolling() {
+  if (!pendingVerificationTimer) return;
+  window.clearTimeout(pendingVerificationTimer);
+  pendingVerificationTimer = 0;
+}
+
+async function pollPendingVerificationState() {
+  if (!pendingVerificationCount() || pendingVerificationRequest) return pendingVerificationRequest;
+  pendingVerificationRequest = refreshServerState({ emitPromotion: true })
+    .catch(() => null)
+    .finally(() => {
+      pendingVerificationRequest = null;
+      ensurePendingVerificationPolling();
+    });
+  return pendingVerificationRequest;
+}
+
+export function ensurePendingVerificationPolling({ immediate = false } = {}) {
+  if (!pendingVerificationCount()) {
+    clearPendingVerificationPolling();
+    return pendingVerificationRequest;
+  }
+  if (immediate) {
+    clearPendingVerificationPolling();
+    void pollPendingVerificationState();
+    return pendingVerificationRequest;
+  }
+  if (pendingVerificationRequest || pendingVerificationTimer) return pendingVerificationRequest;
+  pendingVerificationTimer = window.setTimeout(() => {
+    pendingVerificationTimer = 0;
+    void pollPendingVerificationState();
+  }, PENDING_VERIFICATION_POLL_MS);
+  return pendingVerificationRequest;
 }
 
 function cloneServerState() {
   return runtimeState.server ? structuredClone(runtimeState.server) : null;
 }
 
+function urlForUser(template, username) {
+  return template.replace('__USERNAME__', encodeURIComponent(username));
+}
+
 export function getRuntimeState() {
   return runtimeState;
 }
 
-export function setServerState(serverState) {
+export function isEditableTarget(target = document.activeElement) {
+  const element = toElement(target);
+  return Boolean(element?.closest?.(EDITABLE_TARGET_SELECTOR));
+}
+
+export function areHotkeysSuspended(eventOrTarget = document.activeElement) {
+  const target = eventOrTarget?.target ?? eventOrTarget;
+  return Boolean(runtimeState.ui.hotkeysSuspended) || isEditableTarget(target);
+}
+
+export function setServerState(serverState, options = {}) {
+  const { emitPromotion = false } = options;
+  const previousServerState = runtimeState.server;
   runtimeState.server = serverState;
-  runtimeState.currentMapId = serverState?.player?.map_id || runtimeState.currentMapId;
+  if (!(runtimeState.guestGarden && runtimeState.currentMapId === 'guest_garden')) {
+    runtimeState.currentMapId = serverState?.player?.map_id || runtimeState.currentMapId;
+  }
   emitChange();
+  if (emitPromotion) emitInventoryPromotion(previousServerState, serverState);
+  ensurePendingVerificationPolling();
   return serverState;
 }
 
-export async function refreshServerState() {
+export function setGuestGarden(guestGarden) {
+  runtimeState.guestGarden = guestGarden;
+  emitChange();
+  return guestGarden;
+}
+
+export function clearGuestGarden() {
+  runtimeState.guestGarden = null;
+  emitChange();
+}
+
+export async function refreshServerState(options = {}) {
   const response = await fetch(window.GAME_CONFIG.stateUrl, { credentials: 'same-origin' });
   if (!response.ok) {
     throw new Error(`Could not load game state (${response.status})`);
   }
   const payload = await response.json();
-  return setServerState(payload);
+  return setServerState(payload, options);
+}
+
+export async function fetchGuestGarden(username) {
+  const response = await fetch(urlForUser(window.GAME_CONFIG.guestGardenUrlTemplate, username), {
+    credentials: 'same-origin',
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load that garden');
+  }
+  return setGuestGarden(payload);
+}
+
+export async function recordGardenVisit(username) {
+  const response = await fetch(urlForUser(window.GAME_CONFIG.guestGardenVisitUrlTemplate, username), {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': window.GAME_CONFIG.csrfToken,
+    },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not record visit');
+  }
+  if (payload.garden_state) {
+    setGuestGarden(payload.garden_state);
+  }
+  return payload;
 }
 
 export function patchServerState(patcher) {
   const nextState = cloneServerState() || {};
   patcher(nextState);
-  runtimeState.server = nextState;
-  emitChange();
+  return setServerState(nextState);
 }
 
 export function setCurrentMapId(mapId) {
@@ -131,6 +270,7 @@ export async function publishBookmark(targetUrl, title = '') {
       server.player.pending_count = server.pending_inventory.length;
     }
   });
+  ensurePendingVerificationPolling({ immediate: true });
   return payload.activity;
 }
 
@@ -154,6 +294,7 @@ export async function publishNote(content, title = '') {
       server.player.pending_count = server.pending_inventory.length;
     }
   });
+  ensurePendingVerificationPolling({ immediate: true });
   return payload.activity;
 }
 
@@ -192,6 +333,10 @@ export async function toggleFullscreen(rootEl = document.getElementById('game-ro
 
 export function renderStateToText() {
   const server = runtimeState.server || {};
+  const guestGarden = runtimeState.guestGarden || null;
+  const activeGarden = guestGarden?.garden || server.garden || [];
+  const activeOwner = guestGarden?.owner || server.owner || null;
+  const activeHealth = guestGarden?.garden_health || server.garden_health || null;
   const payload = {
     mode: runtimeState.ui.mode,
     coordinate_system: 'tile coordinates use origin at top-left; +x right, +y down',
@@ -204,6 +349,8 @@ export function renderStateToText() {
       tile_y: runtimeState.playerSnapshot.tileY,
       facing: runtimeState.playerSnapshot.facing,
     },
+    active_garden_owner: activeOwner,
+    garden_health: activeHealth,
     site_status: server.site_status || null,
     capabilities: server.capabilities || {},
     verified_inventory: (server.verified_inventory || []).map((item) => ({
@@ -220,7 +367,7 @@ export function renderStateToText() {
       canonical_url: item.canonical_url,
       source_url: item.source_url,
     })),
-    garden: (server.garden || []).map((plot) => ({
+    garden: activeGarden.map((plot) => ({
       slot_x: plot.slot_x,
       slot_y: plot.slot_y,
       title: plot.link_title,
@@ -229,11 +376,16 @@ export function renderStateToText() {
       status: plot.status,
       growth_stage: plot.growth_stage,
     })),
+    guest_garden: guestGarden ? {
+      owner: guestGarden.owner,
+      visit: guestGarden.visit,
+    } : null,
     neighbors: (server.neighbors || []).map((neighbor) => ({
       username: neighbor.username,
       display_name: neighbor.display_name,
       target_url: neighbor.target_url,
       relationship: neighbor.relationship,
+      visitable: Boolean(neighbor.visitable),
     })),
     quests: (server.quests || []).map((quest) => ({
       slug: quest.slug,

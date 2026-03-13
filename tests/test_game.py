@@ -4,9 +4,12 @@ import json
 from unittest.mock import Mock, patch
 
 from django.test import TestCase
+from django.utils import timezone
 
-from game.models import GameProfile, GardenPlot, NeighborLink, Quest, SiteScan, VerifiedActivity
+from game.models import GardenVisit, GameProfile, GardenPlot, NeighborLink, Quest, SiteScan, VerifiedActivity
+from game.tasks import verify_published_activity
 from harvests.models import Harvest
+from picks.models import Pick
 from plants.models import UserIdentity
 
 
@@ -57,6 +60,7 @@ class GameStateAPITests(TestCase):
             canonical_url="https://example.com/posts/hello",
             source_url="https://example.com/posts/hello",
             title="Hello garden",
+            verified_at=timezone.now(),
         )
         session = self.client.session
         session["identity_id"] = self.identity.id
@@ -70,7 +74,9 @@ class GameStateAPITests(TestCase):
         data = json.loads(response.content)
 
         self.assertIn("player", data)
+        self.assertIn("owner", data)
         self.assertIn("site_status", data)
+        self.assertIn("garden_health", data)
         self.assertIn("capabilities", data)
         self.assertIn("verified_inventory", data)
         self.assertIn("pending_inventory", data)
@@ -78,7 +84,9 @@ class GameStateAPITests(TestCase):
         self.assertIn("quests", data)
 
         self.assertEqual(data["player"]["map_id"], "garden")
+        self.assertEqual(data["owner"]["username"], "gardener")
         self.assertEqual(data["capabilities"]["micropub_endpoint"], "https://example.com/micropub")
+        self.assertEqual(data["garden_health"]["label"], "steady")
         self.assertEqual(len(data["verified_inventory"]), 1)
 
     def test_game_index_authenticated(self):
@@ -86,6 +94,7 @@ class GameStateAPITests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "game-container")
         self.assertContains(response, "publishNoteUrl")
+        self.assertContains(response, f"/game/gardens/{self.identity.username}/")
 
     def test_game_index_unauthenticated(self):
         self.client.session.flush()
@@ -99,6 +108,20 @@ class GameStateAPITests(TestCase):
         payload = json.loads(response.content)
         self.assertEqual(payload["status"], SiteScan.STATUS_VERIFIED)
         self.assertTrue(payload["capabilities"]["website_verified"])
+
+    def test_shared_garden_index_includes_guest_launch_config(self):
+        host = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+
+        response = self.client.get(f"/game/gardens/{host.username}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'launchMapId: "guest_garden"')
+        self.assertContains(response, 'launchGuestUsername: "friend"')
 
     def test_unplanted_inventory_returns_verified_and_pending(self):
         VerifiedActivity.objects.create(
@@ -162,7 +185,7 @@ class GameStateAPITests(TestCase):
         self.assertIn("verified site activity", payload["error"])
 
     def test_publish_bookmark_creates_pending_activity_and_harvest(self):
-        with patch("game.evidence.requests.post") as post_mock:
+        with patch("game.evidence.requests.post") as post_mock, patch("game.views.verify_published_activity.delay") as delay_mock:
             post_mock.return_value = mock_response(headers={"Location": "https://example.com/posts/bookmark-1"})
             response = self.client.post(
                 "/game/api/publish/bookmark/",
@@ -175,9 +198,10 @@ class GameStateAPITests(TestCase):
         self.assertEqual(activity.status, VerifiedActivity.STATUS_PENDING)
         self.assertEqual(activity.canonical_url, "https://target.example.com/article")
         self.assertTrue(Harvest.objects.filter(identity=self.identity, url="https://target.example.com/article").exists())
+        delay_mock.assert_called_once_with(activity.id)
 
     def test_publish_note_creates_pending_activity(self):
-        with patch("game.evidence.requests.post") as post_mock:
+        with patch("game.evidence.requests.post") as post_mock, patch("game.views.verify_published_activity.delay") as delay_mock:
             post_mock.return_value = mock_response(headers={"Location": "https://example.com/posts/note-1"})
             response = self.client.post(
                 "/game/api/publish/note/",
@@ -193,6 +217,7 @@ class GameStateAPITests(TestCase):
         )
         self.assertEqual(activity.status, VerifiedActivity.STATUS_PENDING)
         self.assertEqual(activity.source_url, "https://example.com/posts/note-1")
+        delay_mock.assert_called_once_with(activity.id)
 
     def test_complete_quest_requires_claimable_progress(self):
         response = self.client.post(
@@ -274,6 +299,323 @@ class GameStateAPITests(TestCase):
         self.assertTrue(
             NeighborLink.objects.filter(identity=self.identity, target_url="https://friend.example/").exists()
         )
+
+    def test_guest_garden_endpoint_requires_verified_neighbor(self):
+        host = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+
+        response = self.client.get(f"/game/api/gardens/{host.username}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("rescan your site", json.loads(response.content)["error"])
+
+    def test_guest_garden_endpoint_returns_host_garden(self):
+        host = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+        host_profile = GameProfile.objects.create(identity=host, map_id="garden", has_website=True)
+        SiteScan.objects.create(
+            identity=host,
+            status=SiteScan.STATUS_VERIFIED,
+            scanned_url=host.me_url,
+            capabilities={"website_verified": True},
+        )
+        host_activity = VerifiedActivity.objects.create(
+            identity=host,
+            kind=VerifiedActivity.KIND_PUBLISHED_ENTRY,
+            status=VerifiedActivity.STATUS_VERIFIED,
+            canonical_url="https://friend.example/posts/hi",
+            source_url="https://friend.example/posts/hi",
+            title="Friend post",
+            verified_at=timezone.now(),
+        )
+        GardenPlot.objects.create(
+            profile=host_profile,
+            slot_x=1,
+            slot_y=1,
+            verified_activity=host_activity,
+            link_url=host_activity.canonical_url,
+            link_title=host_activity.title,
+            plant_type="flower",
+            growth_stage=2,
+        )
+        NeighborLink.objects.create(
+            identity=self.identity,
+            target_identity=host,
+            target_url=host.me_url,
+            relationship=NeighborLink.RELATIONSHIP_BLOGROLL,
+        )
+        response = self.client.get(f"/game/api/gardens/{host.username}/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.content)
+        self.assertEqual(payload["owner"]["username"], "friend")
+        self.assertEqual(payload["garden_health"]["recent_verified_count"], 1)
+        self.assertEqual(len(payload["garden"]), 1)
+        self.assertTrue(payload["visit"]["allowed"])
+
+    def test_record_garden_visit_counts_once_per_day(self):
+        host = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+        GameProfile.objects.create(identity=host, map_id="garden", has_website=True)
+        SiteScan.objects.create(
+            identity=host,
+            status=SiteScan.STATUS_VERIFIED,
+            scanned_url=host.me_url,
+            capabilities={"website_verified": True},
+        )
+        NeighborLink.objects.create(
+            identity=self.identity,
+            target_identity=host,
+            target_url=host.me_url,
+            relationship=NeighborLink.RELATIONSHIP_BLOGROLL,
+        )
+
+        first = self.client.post(
+            f"/game/api/gardens/{host.username}/visit/",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        second = self.client.post(
+            f"/game/api/gardens/{host.username}/visit/",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(json.loads(first.content)["recorded"])
+        self.assertFalse(json.loads(second.content)["recorded"])
+        self.assertEqual(GardenVisit.objects.filter(host=host, visitor=self.identity).count(), 1)
+        self.assertEqual(json.loads(second.content)["garden_state"]["garden_health"]["recent_visitor_count"], 1)
+
+    @patch("game.evidence.requests.get")
+    def test_scan_manual_page_counts_gardn_roll_widget_as_blogroll(self, get_mock):
+        neighbor = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+        Pick.objects.create(picker=self.identity, picked=neighbor)
+
+        home_html = """
+        <html>
+          <body class="h-feed">
+            <article class="h-entry">
+              <a class="u-url" href="https://example.com/posts/hello">Permalink</a>
+              <h1 class="p-name">Hello world</h1>
+            </article>
+          </body>
+        </html>
+        """
+        gardn_html = """
+        <html>
+          <body>
+            <div data-gardn-roll="gardener"></div>
+            <div data-gardn-harvests="gardener"></div>
+            <div data-gardn="gardener"></div>
+          </body>
+        </html>
+        """
+        get_mock.side_effect = [
+            mock_response(text=home_html),
+            mock_response(text=gardn_html),
+        ]
+
+        response = self.client.post(
+            "/game/api/scan/",
+            data=json.dumps({"page_url": "https://example.com/page/gardn/"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.scan.refresh_from_db()
+        self.assertEqual(self.scan.status, SiteScan.STATUS_VERIFIED)
+        self.assertTrue(self.scan.capabilities["roll_embed"])
+
+        neighbor_link = NeighborLink.objects.get(
+            identity=self.identity,
+            target_url="https://friend.example/",
+            relationship=NeighborLink.RELATIONSHIP_GARDN_ROLL,
+        )
+        self.assertEqual(neighbor_link.source_url, "https://example.com/page/gardn/")
+
+    @patch("game.evidence.requests.get")
+    def test_home_scan_rechecks_saved_manual_neighbor_pages(self, get_mock):
+        neighbor = UserIdentity.objects.create(
+            me_url="https://friend.example/",
+            username="friend",
+            display_name="Friend",
+            login_method="indieauth",
+        )
+        Pick.objects.create(picker=self.identity, picked=neighbor)
+
+        home_html = """
+        <html>
+          <body class="h-feed">
+            <article class="h-entry">
+              <a class="u-url" href="https://example.com/posts/hello">Permalink</a>
+              <h1 class="p-name">Hello world</h1>
+            </article>
+          </body>
+        </html>
+        """
+        gardn_html = """
+        <html>
+          <body>
+            <div data-gardn-roll="gardener"></div>
+          </body>
+        </html>
+        """
+
+        def fake_get(url, *args, **kwargs):
+            if url == "https://example.com/":
+                return mock_response(text=home_html)
+            if url == "https://example.com/page/gardn/":
+                return mock_response(text=gardn_html)
+            if url.endswith("/api/gardener/roll.json"):
+                return mock_response(json_data={"roll": []})
+            raise AssertionError(f"Unexpected URL requested during scan: {url}")
+
+        get_mock.side_effect = fake_get
+
+        first_response = self.client.post(
+            "/game/api/scan/",
+            data=json.dumps({"page_url": "https://example.com/page/gardn/"}),
+            content_type="application/json",
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.assertTrue(
+            NeighborLink.objects.filter(
+                identity=self.identity,
+                target_url="https://friend.example/",
+                relationship=NeighborLink.RELATIONSHIP_GARDN_ROLL,
+            ).exists()
+        )
+
+        second_response = self.client.post(
+            "/game/api/scan/",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(second_response.status_code, 200)
+        neighbor_link = NeighborLink.objects.get(
+            identity=self.identity,
+            target_url="https://friend.example/",
+            relationship=NeighborLink.RELATIONSHIP_GARDN_ROLL,
+        )
+        self.assertEqual(neighbor_link.source_url, "https://example.com/page/gardn/")
+
+        payload = json.loads(second_response.content)
+        self.assertEqual(len(payload["state"]["neighbors"]), 1)
+        self.assertTrue(payload["state"]["neighbors"][0]["visitable"])
+
+    @patch("game.evidence.requests.get")
+    def test_scan_manual_permalink_verifies_pending_bookmark(self, get_mock):
+        pending = VerifiedActivity.objects.create(
+            identity=self.identity,
+            kind=VerifiedActivity.KIND_PUBLISHED_BOOKMARK,
+            status=VerifiedActivity.STATUS_PENDING,
+            canonical_url="https://opengameart.org/",
+            source_url="https://example.com/blog/post/opengameartorg-1773380574/",
+            title="OpenGameArt.org",
+        )
+
+        home_html = """
+        <html>
+          <body class="h-feed">
+            <article class="h-entry">
+              <a class="u-url" href="https://example.com/posts/hello">Permalink</a>
+              <h1 class="p-name">Hello world</h1>
+            </article>
+          </body>
+        </html>
+        """
+        manual_html = """
+        <html>
+          <body>
+            <article class="h-entry">
+              <a class="u-uid" href="/blog/post/opengameartorg-1773380574/" hidden></a>
+              <span class="p-name" hidden>OpenGameArt.org</span>
+              <a class="u-bookmark-of" href="https://opengameart.org/" hidden></a>
+            </article>
+          </body>
+        </html>
+        """
+        get_mock.side_effect = [
+            mock_response(text=home_html),
+            mock_response(text=manual_html),
+        ]
+
+        response = self.client.post(
+            "/game/api/scan/",
+            data=json.dumps({"page_url": "https://example.com/blog/post/opengameartorg-1773380574/"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, VerifiedActivity.STATUS_VERIFIED)
+        self.assertEqual(pending.source_url, "https://example.com/blog/post/opengameartorg-1773380574/")
+        self.scan.refresh_from_db()
+        self.assertEqual(self.scan.status, SiteScan.STATUS_VERIFIED)
+
+    @patch("game.evidence.requests.get")
+    def test_verify_published_activity_task_promotes_pending_note(self, get_mock):
+        pending = VerifiedActivity.objects.create(
+            identity=self.identity,
+            kind=VerifiedActivity.KIND_PUBLISHED_ENTRY,
+            status=VerifiedActivity.STATUS_PENDING,
+            canonical_url="https://example.com/posts/note-1",
+            source_url="https://example.com/posts/note-1",
+            title="Hello from the garden",
+            metadata={"created_via": "micropub"},
+        )
+
+        home_html = """
+        <html>
+          <body class="h-feed">
+            <article class="h-entry">
+              <a class="u-url" href="https://example.com/posts/hello">Permalink</a>
+              <h1 class="p-name">Hello world</h1>
+            </article>
+          </body>
+        </html>
+        """
+        manual_html = """
+        <html>
+          <body>
+            <article class="h-entry">
+              <a class="u-url" href="https://example.com/posts/note-1">Permalink</a>
+              <p class="e-content">Hello from the garden</p>
+            </article>
+          </body>
+        </html>
+        """
+        get_mock.side_effect = [
+            mock_response(text=home_html),
+            mock_response(text=manual_html),
+        ]
+
+        verify_published_activity.delay(pending.id)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.status, VerifiedActivity.STATUS_VERIFIED)
+        self.scan.refresh_from_db()
+        self.assertEqual(self.scan.status, SiteScan.STATUS_VERIFIED)
 
 
 class GameProfileAutoCreateTests(TestCase):

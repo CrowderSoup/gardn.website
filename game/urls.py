@@ -6,8 +6,11 @@ from . import views
 
 urlpatterns = [
     path("", views.game_index, name="game_index"),
+    path("gardens/<slug:username>/", views.shared_garden_index, name="shared_garden_index"),
     path("credits/", views.game_credits, name="game_credits"),
     path("api/state/", views.api_game_state, name="api_game_state"),
+    path("api/gardens/<slug:username>/", views.api_public_garden_state, name="api_public_garden_state"),
+    path("api/gardens/<slug:username>/visit/", views.api_record_garden_visit, name="api_record_garden_visit"),
     path("api/site-status/", views.api_site_status, name="api_site_status"),
     path("api/scan/", views.api_scan_site, name="api_scan_site"),
     path("api/save/", views.api_save_position, name="api_save_position"),

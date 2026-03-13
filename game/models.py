@@ -142,6 +142,44 @@ class NeighborLink(models.Model):
         return f"{self.identity_id}->{self.target_url}"
 
 
+class GardenVisit(models.Model):
+    """Unique, rate-limited visits from one gardener to another."""
+
+    SOURCE_NEIGHBOR_GROVE = "neighbor_grove"
+    SOURCE_SHARED_LINK = "shared_link"
+
+    SOURCE_CHOICES = [
+        (SOURCE_NEIGHBOR_GROVE, "Neighbor Grove"),
+        (SOURCE_SHARED_LINK, "Shared Link"),
+    ]
+
+    host = models.ForeignKey(
+        "plants.UserIdentity",
+        on_delete=models.CASCADE,
+        related_name="hosted_garden_visits",
+    )
+    visitor = models.ForeignKey(
+        "plants.UserIdentity",
+        on_delete=models.CASCADE,
+        related_name="garden_visits",
+    )
+    visited_on = models.DateField()
+    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, default=SOURCE_NEIGHBOR_GROVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["host", "visitor", "visited_on"],
+                name="game_unique_daily_garden_visit",
+            )
+        ]
+        ordering = ["-visited_on", "-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.visitor_id}->{self.host_id}@{self.visited_on}"
+
+
 class GameProfile(models.Model):
     """Extended profile for the game layer, linked to the existing gardn UserIdentity."""
 

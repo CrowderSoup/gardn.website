@@ -28,6 +28,7 @@
 
 <div class="game-shell-footer subtle">
   Scan status, pending actions, and neighbor links are now driven by your real site.
+  Share your garden: <a href="{{ share_garden_url }}">{{ share_garden_url }}</a>
 </div>
 
 <!-- NeoCities modal (shown at tutorial step 2 via HTMX) -->
@@ -49,6 +50,11 @@
     publishNoteUrl: "{% url 'api_publish_note' %}",
     tutorialUrl: "{% url 'api_advance_tutorial' %}",
     questCompleteUrl: "{% url 'api_complete_quest' %}",
+    guestGardenUrlTemplate: "{% url 'api_public_garden_state' '__USERNAME__' %}",
+    guestGardenVisitUrlTemplate: "{% url 'api_record_garden_visit' '__USERNAME__' %}",
+    shareGardenUrl: "{{ share_garden_url }}",
+    launchMapId: "{{ launch_map_id }}",
+    launchGuestUsername: "{{ launch_guest_username }}",
     csrfToken: "{{ csrf_token }}",
     staticRoot: "{% static 'game/' %}",
   };

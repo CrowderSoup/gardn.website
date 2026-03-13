@@ -161,3 +161,14 @@ Original prompt: We're building a Gardn game (in the app `game` inside this repo
   - `DATABASE_URL=sqlite:////tmp/gardn-impl-tests.sqlite3 uv run manage.py test --settings=gardn.test_settings tests.test_game`
 - Browser smoke note:
   - Installed `playwright` into `/tmp/codex-playwright`, but I still do not have a scripted authenticated browser session flow for `/game/`, so I could not complete the requested visual Playwright pass yet.
+
+## 2026-03-13 Journey mapping pass
+
+- Documented the current player journey in `docs/game-flow.md`.
+- Added two Mermaid diagrams:
+  - A spatial map graph for Crossroads, Homestead Garden, Link Library, Neighbor Grove, Guest Garden, and the shared-link entry path.
+  - A progression flowchart covering login, tutorial branching, publish/scan/plant loops, Micropub pending verification, neighbor discovery, and guest-garden visits.
+- Added a storyboard table describing the playable beats in plain English so design discussions can reference the current experience without re-reading scene code.
+- Notes:
+  - This is intentionally a "where we are so far" snapshot, not a future-state design doc.
+  - `GardenScene` is still present in code, but the active playable journey runs through `WorldScene` plus overlay scenes/modals.

@@ -4,6 +4,7 @@ from django.core.cache import cache
 from django.test import TestCase
 
 from harvests.cache import get_harvest_stats, harvest_stats_cache_key
+from harvests.metadata import HarvestMetadata, normalize_harvest_url
 from harvests.models import Harvest
 from plants.models import UserIdentity
 
@@ -88,6 +89,101 @@ class HarvestTaskTests(TestCase):
         with patch("harvests.views.post_to_mastodon.delay") as mock_task:
             self.client.post(f"/harvest/{self.harvest.id}/post/", {"target": "mastodon"})
         mock_task.assert_called_once()
+
+    def test_create_normalizes_tracking_heavy_urls(self):
+        noisy_url = (
+            "https://www.lochby.com/products/field-sling"
+            "?utm_medium=paid"
+            "&utm_id=120237860626400310"
+            "&utm_content=120242479939950310"
+            "&utm_term=120242470451640310"
+            "&utm_campaign=120237860626400310"
+            "&utm_source=facebook"
+            "&campaign_id=120237860626400310"
+            "&ad_id=120242479939950310"
+            "&variant=42713130434596"
+        )
+        normalized_url = normalize_harvest_url(noisy_url)
+
+        with patch(
+            "harvests.views.fetch_url_metadata",
+            return_value=HarvestMetadata(
+                url=normalized_url,
+                title="Field Sling",
+                note="Waxed canvas everyday sling.",
+                tags=["lochby"],
+                fetched=True,
+            ),
+        ):
+            response = self.client.post("/harvest/", {"url": noisy_url, "title": ""})
+
+        self.assertRedirects(response, "/dashboard/", fetch_redirect_response=False)
+        saved = Harvest.objects.exclude(id=self.harvest.id).get()
+        self.assertEqual(saved.url, normalized_url)
+        self.assertEqual(
+            saved.url,
+            "https://www.lochby.com/products/field-sling?variant=42713130434596",
+        )
+        self.assertEqual(saved.title, "Field Sling")
+        self.assertEqual(saved.note, "Waxed canvas everyday sling.")
+        self.assertEqual(saved.tags, "lochby")
+
+    def test_create_read_later_checkbox_adds_tag(self):
+        response = self.client.post(
+            "/harvest/",
+            {
+                "url": "https://example.com/read-next",
+                "title": "Read next",
+                "tags": "bags",
+                "read_later": "true",
+            },
+        )
+
+        self.assertRedirects(response, "/dashboard/", fetch_redirect_response=False)
+        saved = Harvest.objects.exclude(id=self.harvest.id).get()
+        self.assertEqual(saved.tags, "bags, read-later")
+
+    def test_duplicate_save_keeps_existing_metadata_when_new_submit_is_blank(self):
+        with patch(
+            "harvests.views.fetch_url_metadata",
+            return_value=HarvestMetadata(url=self.harvest.url),
+        ):
+            response = self.client.post(
+                "/harvest/",
+                {"url": self.harvest.url, "title": "", "note": "", "tags": ""},
+            )
+
+        self.assertRedirects(response, "/dashboard/", fetch_redirect_response=False)
+        self.harvest.refresh_from_db()
+        self.assertEqual(self.harvest.title, "Test Article")
+        self.assertEqual(self.harvest.note, "")
+        self.assertEqual(self.harvest.tags, "")
+
+    def test_metadata_endpoint_returns_json_payload(self):
+        with patch(
+            "harvests.views.fetch_url_metadata",
+            return_value=HarvestMetadata(
+                url="https://example.com/story",
+                title="Example Story",
+                note="A short summary.",
+                tags=["example", "story"],
+                fetched=True,
+            ),
+        ):
+            response = self.client.get("/harvest/metadata/?url=https://example.com/story")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "url": "https://example.com/story",
+                "title": "Example Story",
+                "note": "A short summary.",
+                "tags": ["example", "story"],
+                "fetched": True,
+                "read_later_tag": "read-later",
+            },
+        )
 
 
 class HarvestEditViewTests(TestCase):

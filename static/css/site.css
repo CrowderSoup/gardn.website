@@ -325,6 +325,106 @@ button:active {
   padding: 1.2rem;
 }
 
+.harvest-capture-card {
+  max-width: 700px;
+  background:
+    radial-gradient(circle at top right, rgba(33, 120, 72, 0.12), transparent 28%),
+    linear-gradient(180deg, #ffffff, #f9fcf3);
+}
+
+.harvest-capture-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.harvest-capture-intro {
+  max-width: 44rem;
+}
+
+.harvest-capture-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.harvest-capture-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(33, 120, 72, 0.08);
+  border: 1px solid rgba(33, 120, 72, 0.12);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.harvest-capture-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.harvest-url-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.harvest-url-field label,
+.harvest-url-field input {
+  margin-bottom: 0;
+}
+
+.harvest-autofill-btn {
+  min-width: 10.5rem;
+}
+
+.harvest-form-hint {
+  margin-top: -0.15rem;
+  font-size: 0.84rem;
+}
+
+.harvest-meta-status {
+  min-height: 1.35rem;
+  font-size: 0.9rem;
+}
+
+.harvest-meta-status[data-state="error"] {
+  color: var(--danger);
+}
+
+.harvest-checkbox-card {
+  align-items: flex-start;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.harvest-checkbox-card strong {
+  display: block;
+  font-size: 0.97rem;
+}
+
+.harvest-checkbox-hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.84rem;
+}
+
+.harvest-form-actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
 label {
   display: block;
   font-weight: 700;
@@ -819,6 +919,20 @@ pre {
 
   .harvests-sidebar {
     position: static;
+  }
+
+  .harvest-capture-header,
+  .harvest-url-row {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .harvest-capture-badges {
+    justify-content: flex-start;
+  }
+
+  .harvest-autofill-btn {
+    width: 100%;
   }
 }
 

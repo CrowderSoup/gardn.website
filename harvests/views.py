@@ -4,10 +4,12 @@ from urllib.parse import urlparse, urlencode
 
 from django.conf import settings
 from django.core.paginator import Paginator
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import DataError
 from django.db.models import Q
 from django.utils import timezone
 from django.contrib import messages
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
@@ -15,6 +17,14 @@ from plants.models import UserIdentity
 from plants.svg_cache import invalidate_svg
 
 from .cache import get_harvest_stats, invalidate_harvest_stats
+from .metadata import (
+    fetch_url_metadata,
+    guess_title_from_url,
+    merge_tags,
+    normalize_harvest_url,
+    split_tag_string,
+    tag_string,
+)
 from .models import Harvest
 from .tasks import post_to_micropub, post_to_mastodon
 
@@ -51,6 +61,14 @@ def _harvests_redirect_target(request: HttpRequest) -> str:
     if next_url.startswith("/"):
         return next_url
     return "/harvests/"
+
+
+def _read_later_tag(identity: UserIdentity) -> str:
+    try:
+        profile = identity.game_profile
+    except ObjectDoesNotExist:
+        return "read-later"
+    return profile.read_later_tag or "read-later"
 
 
 @require_GET
@@ -115,46 +133,108 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
         identity.login_method == "mastodon"
         and bool(identity.mastodon_access_token)
     )
+    read_later_tag = _read_later_tag(identity)
 
     if request.method == "GET":
+        url = normalize_harvest_url(request.GET.get("url", ""))
+        title = request.GET.get("title", "").strip()
+        note = request.GET.get("note", "").strip()
+        tags = tag_string(split_tag_string(request.GET.get("tags", "")))
+        title_autofilled = False
+
+        if url and not title:
+            title = guess_title_from_url(url)
+            title_autofilled = bool(title)
+
         return render(request, "harvests/harvest_form.html", {
             "identity": identity,
-            "url": request.GET.get("url", ""),
-            "title": request.GET.get("title", ""),
+            "url": url,
+            "title": title,
+            "title_autofilled": title_autofilled,
+            "note": note,
+            "tags": tags,
+            "read_later_tag": read_later_tag,
+            "read_later_checked": read_later_tag in split_tag_string(tags),
             "micropub_endpoint": micropub_endpoint,
             "can_post_to_mastodon": can_post_to_mastodon,
         })
 
     # POST
-    url = request.POST.get("url", "").strip()
-    title = request.POST.get("title", "").strip()
-    note = request.POST.get("note", "").strip()
-    tags = ", ".join(t.strip() for t in request.POST.get("tags", "").split(",") if t.strip())
+    submitted_url = request.POST.get("url", "").strip()
+    url = normalize_harvest_url(submitted_url)
+    submitted_title = request.POST.get("title", "").strip()
+    title = submitted_title
+    submitted_note = request.POST.get("note", "").strip()
+    note = submitted_note
+    submitted_tags = split_tag_string(request.POST.get("tags", ""))
+    tags_list = submitted_tags[:]
+    read_later_checked = request.POST.get("read_later") == "true"
+    if read_later_checked:
+        tags_list = merge_tags(tags_list, [read_later_tag])
     post_to_micropub_flag = request.POST.get("post_to_micropub") == "true"
     post_to_mastodon_flag = request.POST.get("post_to_mastodon") == "true"
+    should_autofill_metadata = not submitted_title and not submitted_note and not submitted_tags
+
+    if should_autofill_metadata and url:
+        metadata = fetch_url_metadata(url)
+        title = metadata.title or title
+        note = metadata.note or note
+        tags_list = merge_tags(tags_list, metadata.tags)
+
+    tags = tag_string(tags_list)
 
     if not url or not _is_valid_url(url):
+        return render(request, "harvests/harvest_form.html", {
+            "identity": identity,
+            "url": submitted_url,
+            "title": title,
+            "note": note,
+            "tags": tags,
+            "read_later_tag": read_later_tag,
+            "read_later_checked": read_later_checked,
+            "micropub_endpoint": micropub_endpoint,
+            "can_post_to_mastodon": can_post_to_mastodon,
+            "error": "Please enter a valid http/https URL.",
+        }, status=400)
+
+    try:
+        harvest, created = Harvest.objects.get_or_create(
+            identity=identity,
+            url=url,
+            defaults={"title": title, "note": note, "tags": tags},
+        )
+    except DataError:
         return render(request, "harvests/harvest_form.html", {
             "identity": identity,
             "url": url,
             "title": title,
             "note": note,
             "tags": tags,
+            "read_later_tag": read_later_tag,
+            "read_later_checked": read_later_checked,
             "micropub_endpoint": micropub_endpoint,
             "can_post_to_mastodon": can_post_to_mastodon,
-            "error": "Please enter a valid http/https URL.",
+            "error": "That link is still too long to save after cleanup. Try removing extra query parameters and save again.",
         }, status=400)
 
-    harvest, created = Harvest.objects.get_or_create(
-        identity=identity,
-        url=url,
-        defaults={"title": title, "note": note, "tags": tags},
-    )
     if not created:
-        harvest.title = title
-        harvest.note = note
-        harvest.tags = tags
-        harvest.save(update_fields=["title", "note", "tags"])
+        update_fields: list[str] = []
+
+        if title and (submitted_title or not harvest.title) and harvest.title != title:
+            harvest.title = title
+            update_fields.append("title")
+
+        if note and (submitted_note or not harvest.note) and harvest.note != note:
+            harvest.note = note
+            update_fields.append("note")
+
+        merged_existing_tags = tag_string(merge_tags(harvest.tags_list(), tags_list))
+        if merged_existing_tags != harvest.tags:
+            harvest.tags = merged_existing_tags
+            update_fields.append("tags")
+
+        if update_fields:
+            harvest.save(update_fields=update_fields)
 
     invalidate_harvest_stats(identity.id)
 
@@ -170,15 +250,36 @@ def harvest_view(request: HttpRequest) -> HttpResponse:
 
     is_popup = request.GET.get("popup") == "1"
     if is_popup:
-        return render(request, "harvests/harvest_success.html", {"url": url, "title": title})
+        return render(request, "harvests/harvest_success.html", {"url": url, "title": harvest.title})
 
     if request.headers.get("HX-Request"):
         response = HttpResponse(status=204)
         response["HX-Redirect"] = "/dashboard/"
         return response
 
-    messages.success(request, f"Harvested: {title or url}")
+    messages.success(request, f"Harvested: {harvest.title or url}")
     return redirect("/dashboard/")
+
+
+@require_GET
+def harvest_metadata_view(request: HttpRequest) -> HttpResponse:
+    identity = _current_identity(request)
+    if not identity:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    url = normalize_harvest_url(request.GET.get("url", ""))
+    if not url or not _is_valid_url(url):
+        return JsonResponse({"error": "Please enter a valid http/https URL."}, status=400)
+
+    metadata = fetch_url_metadata(url)
+    return JsonResponse({
+        "url": metadata.url,
+        "title": metadata.title,
+        "note": metadata.note,
+        "tags": metadata.tags,
+        "fetched": metadata.fetched,
+        "read_later_tag": _read_later_tag(identity),
+    })
 
 
 @require_POST

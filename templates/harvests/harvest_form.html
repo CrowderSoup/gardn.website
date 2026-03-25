@@ -1,40 +1,252 @@
 {% extends "base.html" %}
 {% block title %}Harvest URL | Gardn{% endblock %}
 {% block content %}
-<section class="card auth-card">
-  <p class="eyebrow">Save a link</p>
-  <h1>Harvest a URL</h1>
+<section class="card auth-card harvest-capture-card">
+  <div class="harvest-capture-header">
+    <div>
+      <p class="eyebrow">Save a link</p>
+      <h1>Harvest a URL</h1>
+      <p class="subtle harvest-capture-intro">Drop in a page and Gardn will clean up common tracking junk, then try to pull in the title, note, and a few useful tags for you.</p>
+    </div>
+    <div class="harvest-capture-badges" aria-hidden="true">
+      <span class="harvest-capture-badge">Autofill from page</span>
+      <span class="harvest-capture-badge">Read-later friendly</span>
+    </div>
+  </div>
   {% if error %}
     <p class="msg">{{ error }}</p>
   {% endif %}
-  <form method="post" action="/harvest/{% if request.GET.popup %}?popup=1{% endif %}">
+  <form method="post"
+        action="/harvest/{% if request.GET.popup %}?popup=1{% endif %}"
+        class="harvest-capture-form"
+        data-harvest-form
+        data-metadata-url="/harvest/metadata/"
+        data-read-later-tag="{{ read_later_tag }}">
     {% csrf_token %}
-    <label for="id_url">URL</label>
-    <input id="id_url" type="url" name="url" value="{{ url }}" required placeholder="https://example.com/post" autofocus>
+    <div class="harvest-url-row">
+      <div class="harvest-url-field">
+        <label for="id_url">URL</label>
+        <input id="id_url" type="url" name="url" value="{{ url }}" required placeholder="https://example.com/post" autofocus>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small harvest-autofill-btn" data-autofill-button>Autofill details</button>
+    </div>
+    <p class="subtle harvest-form-hint">Common tracking parameters like <code>utm_*</code>, <code>campaign_id</code>, and <code>ad_id</code> are removed before save.</p>
+    <p class="subtle harvest-meta-status" data-harvest-status aria-live="polite"></p>
 
     <label for="id_title">Title</label>
-    <input id="id_title" type="text" name="title" value="{{ title }}" placeholder="Optional title">
+    <input id="id_title"
+           type="text"
+           name="title"
+           value="{{ title }}"
+           placeholder="Optional title"
+           data-autofilled="{% if title_autofilled %}true{% else %}false{% endif %}">
 
     <label for="id_note">Note</label>
-    <textarea id="id_note" name="note" rows="3" placeholder="Optional note">{{ note }}</textarea>
+    <textarea id="id_note"
+              name="note"
+              rows="4"
+              placeholder="Optional note"
+              data-autofilled="{% if note %}false{% else %}true{% endif %}">{{ note }}</textarea>
 
     <label for="id_tags">Tags</label>
-    <input id="id_tags" type="text" name="tags" value="{{ tags }}" placeholder="comma-separated tags (e.g. python, web, tools)">
+    <input id="id_tags"
+           type="text"
+           name="tags"
+           value="{{ tags }}"
+           placeholder="comma-separated tags (e.g. python, web, tools)"
+           data-autofilled="{% if tags %}false{% else %}true{% endif %}">
+
+    <label class="checkbox-label harvest-checkbox-card">
+      <input id="id_read_later" type="checkbox" name="read_later" value="true" {% if read_later_checked %}checked{% endif %}>
+      <span>
+        <strong>Read later</strong>
+        <span class="subtle harvest-checkbox-hint">Adds the <code>{{ read_later_tag }}</code> tag automatically when you save.</span>
+      </span>
+    </label>
 
     {% if micropub_endpoint %}
-      <label class="checkbox-label">
+      <label class="checkbox-label harvest-checkbox-card">
         <input type="checkbox" name="post_to_micropub" value="true">
-        Post bookmark to my website via Micropub
+        <span>
+          <strong>Post bookmark to my website</strong>
+          <span class="subtle harvest-checkbox-hint">Send it to your site via Micropub after saving it here.</span>
+        </span>
       </label>
-    {% elif can_post_to_mastodon %}
-      <label class="checkbox-label">
+    {% endif %}
+    {% if can_post_to_mastodon %}
+      <label class="checkbox-label harvest-checkbox-card">
         <input type="checkbox" name="post_to_mastodon" value="true">
-        Post bookmark to Mastodon
+        <span>
+          <strong>Post bookmark to Mastodon</strong>
+          <span class="subtle harvest-checkbox-hint">Share this saved link to your connected Mastodon profile.</span>
+        </span>
       </label>
     {% endif %}
 
-    <button type="submit">Harvest</button>
-    {% if request.GET.popup %}<button type="button" onclick="window.close()">Cancel</button>{% endif %}
+    <div class="harvest-form-actions">
+      <button type="submit">Harvest</button>
+      {% if request.GET.popup %}<button type="button" class="btn btn-ghost" onclick="window.close()">Cancel</button>{% endif %}
+    </div>
   </form>
 </section>
+<script>
+  (() => {
+    const form = document.querySelector("[data-harvest-form]");
+    if (!form) return;
+
+    const metadataUrl = form.dataset.metadataUrl;
+    const readLaterTag = form.dataset.readLaterTag || "read-later";
+    const urlInput = form.querySelector("#id_url");
+    const titleInput = form.querySelector("#id_title");
+    const noteInput = form.querySelector("#id_note");
+    const tagsInput = form.querySelector("#id_tags");
+    const readLaterInput = form.querySelector("#id_read_later");
+    const status = form.querySelector("[data-harvest-status]");
+    const autofillButton = form.querySelector("[data-autofill-button]");
+
+    let pendingController = null;
+    let debounceTimer = null;
+    let lastRequestedUrl = "";
+
+    const splitTags = (value) => value
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+
+    const mergeTags = (...groups) => {
+      const seen = new Set();
+      const merged = [];
+      groups.flat().forEach((tag) => {
+        const cleaned = String(tag || "").trim();
+        if (!cleaned) return;
+        const key = cleaned.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(cleaned);
+      });
+      return merged;
+    };
+
+    const syncReadLaterTag = () => {
+      const currentTags = splitTags(tagsInput.value);
+      const withoutReadLater = currentTags.filter((tag) => tag.toLowerCase() !== readLaterTag.toLowerCase());
+      if (readLaterInput.checked) {
+        tagsInput.value = mergeTags(withoutReadLater, [readLaterTag]).join(", ");
+        return;
+      }
+      tagsInput.value = withoutReadLater.join(", ");
+    };
+
+    const keepCheckboxInSync = () => {
+      const currentTags = splitTags(tagsInput.value);
+      readLaterInput.checked = currentTags.some((tag) => tag.toLowerCase() === readLaterTag.toLowerCase());
+    };
+
+    const markManual = (input) => {
+      input.addEventListener("input", () => {
+        input.dataset.autofilled = "false";
+      });
+    };
+
+    const shouldFillField = (input) => {
+      return !input.value.trim() || input.dataset.autofilled === "true";
+    };
+
+    const updateStatus = (message, isError = false) => {
+      status.textContent = message;
+      status.dataset.state = isError ? "error" : "ready";
+    };
+
+    const applyMetadata = (payload) => {
+      if (payload.url) {
+        urlInput.value = payload.url;
+      }
+      if (payload.title && shouldFillField(titleInput)) {
+        titleInput.value = payload.title;
+        titleInput.dataset.autofilled = "true";
+      }
+      if (payload.note && shouldFillField(noteInput)) {
+        noteInput.value = payload.note;
+        noteInput.dataset.autofilled = "true";
+      }
+      if (Array.isArray(payload.tags) && payload.tags.length) {
+        const currentTags = splitTags(tagsInput.value);
+        tagsInput.value = mergeTags(currentTags, payload.tags).join(", ");
+        tagsInput.dataset.autofilled = "true";
+      }
+      keepCheckboxInSync();
+    };
+
+    const fetchMetadata = async () => {
+      const rawUrl = urlInput.value.trim();
+      if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) {
+        updateStatus("");
+        return;
+      }
+
+      lastRequestedUrl = rawUrl;
+      if (pendingController) {
+        pendingController.abort();
+      }
+      pendingController = new AbortController();
+      updateStatus("Looking up page details...");
+
+      try {
+        const response = await fetch(`${metadataUrl}?url=${encodeURIComponent(rawUrl)}`, {
+          method: "GET",
+          credentials: "same-origin",
+          signal: pendingController.signal,
+          headers: {
+            "X-Requested-With": "fetch"
+          }
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error || "Could not fetch metadata.");
+        }
+        if (urlInput.value.trim() !== lastRequestedUrl) {
+          return;
+        }
+
+        applyMetadata(payload);
+        if (payload.fetched) {
+          updateStatus("Filled in details from the page.");
+        } else {
+          updateStatus("Filled in what we could from the link.");
+        }
+      } catch (error) {
+        if (error.name === "AbortError") {
+          return;
+        }
+        updateStatus("Couldn’t fetch page details. You can still save the link.", true);
+      }
+    };
+
+    const scheduleMetadataFetch = () => {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(fetchMetadata, 450);
+    };
+
+    markManual(titleInput);
+    markManual(noteInput);
+    markManual(tagsInput);
+
+    urlInput.addEventListener("change", scheduleMetadataFetch);
+    urlInput.addEventListener("blur", scheduleMetadataFetch);
+    autofillButton.addEventListener("click", fetchMetadata);
+    readLaterInput.addEventListener("change", syncReadLaterTag);
+    tagsInput.addEventListener("input", keepCheckboxInSync);
+
+    keepCheckboxInSync();
+
+    if (urlInput.value.trim() && (
+      shouldFillField(titleInput) ||
+      shouldFillField(noteInput) ||
+      shouldFillField(tagsInput)
+    )) {
+      fetchMetadata();
+    }
+  })();
+</script>
 {% endblock %}
